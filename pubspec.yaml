@@ -1,0 +1,27 @@
+name: moonkeep
+description: "Moonkeep – ein gemeinsamer Familienkalender."
+publish_to: 'none'
+version: 0.4.1+8
+
+environment:
+  sdk: ^3.13.2
+
+dependencies:
+  cloud_firestore: ^6.9.0
+  firebase_auth: ^6.6.1
+  firebase_core: ^4.14.0
+  flutter:
+    sdk: flutter
+  flutter_local_notifications: ^22.3.0
+  flutter_localizations:
+    sdk: flutter
+  shared_preferences: ^2.5.5
+  timezone: ^0.11.1
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true

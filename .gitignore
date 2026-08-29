@@ -1,0 +1,29 @@
+# Local tooling and caches
+.tools/
+.dart_tool/
+.flutter-plugins-dependencies
+.pub-cache/
+build/
+coverage/
+node_modules/
+.firebase/
+*-debug.log
+
+# IDE and machine-specific files
+.idea/
+*.iml
+.DS_Store
+Thumbs.db
+
+# Credentials and environment-specific Firebase configuration
+.env
+.env.*
+!.env.example
+**/google-services.json
+**/GoogleService-Info.plist
+lib/firebase_options.dart
+config/firebase.*.json
+!config/firebase.example.json
+**/key.properties
+*.jks
+*.keystore

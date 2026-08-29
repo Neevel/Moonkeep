@@ -1,0 +1,282 @@
+const { readFileSync } = require('node:fs');
+const { test, before, beforeEach, after } = require('node:test');
+const assert = require('node:assert/strict');
+const { initializeTestEnvironment, assertSucceeds, assertFails } = require('@firebase/rules-unit-testing');
+const { doc, getDoc, getDocs, collection, query, where, setDoc, updateDoc, deleteDoc,
+  writeBatch, serverTimestamp, Timestamp, runTransaction, onSnapshot } = require('firebase/firestore');
+
+let env;
+const code = 'a'.repeat(32);
+const db = (uid, verified = true) => env.authenticatedContext(uid, { email_verified: verified, email: `${uid}@example.test` }).firestore();
+const membership = (fid, invitationId = null) => ({ familyId: fid, invitationId, joinedAt: serverTimestamp() });
+const family = (uid) => ({ name: 'Testfamilie', ownerId: uid, timeZone: 'Europe/Berlin', createdAt: serverTimestamp() });
+const memberProfile = (uid, role = 'member', joinedAt = serverTimestamp()) => ({
+  email: `${uid}@example.test`, role, joinedAt,
+});
+async function create(uid, fid) {
+  const client = db(uid), batch = writeBatch(client);
+  batch.set(doc(client, 'families', fid), family(uid));
+  batch.set(doc(client, 'memberships', uid), membership(fid));
+  batch.set(doc(client, 'families', fid, 'members', uid), memberProfile(uid, 'owner'));
+  await batch.commit();
+}
+const invitation = (fid = 'alpha') => ({ familyId: fid, createdAt: serverTimestamp(),
+  expiresAt: Timestamp.fromMillis(Date.now() + 6 * 86400000), acceptedBy: null, acceptedAt: null });
+async function invite() { await setDoc(doc(db('alice'), 'invitations', code), invitation()); }
+async function join(uid, invitationCode = code, fid = 'alpha') {
+  const client = db(uid), batch = writeBatch(client);
+  batch.set(doc(client, 'memberships', uid), membership(fid, invitationCode));
+  batch.update(doc(client, 'invitations', invitationCode), { acceptedBy: uid, acceptedAt: serverTimestamp() });
+  batch.set(doc(client, 'families', fid, 'members', uid), memberProfile(uid));
+  await batch.commit();
+}
+const event = (uid = 'alice') => ({ title: 'Ausflug', notes: '', year: 2026, month: 8, day: 29,
+  startMinute: 540, endMinute: 600, importance: 'normal', reminderMinutesBefore: null,
+  revision: 1, updatedBy: uid, updatedAt: serverTimestamp() });
+const activity = (action, uid = 'alice', title = 'Ausflug') => ({
+  action, eventId: 'a'.repeat(32), title, actorId: uid, createdAt: serverTimestamp(),
+});
+
+before(async () => {
+  // Hard-coded demo ID: these tests must never target the user's real project.
+  env = await initializeTestEnvironment({ projectId: 'demo-moonkeep',
+    firestore: { host: '127.0.0.1', port: 8180, rules: readFileSync('firestore.rules', 'utf8') } });
+});
+beforeEach(async () => { await env.clearFirestore(); await create('alice', 'alpha'); });
+after(async () => { if (env) await env.cleanup(); });
+
+test('family creation is atomic and limited to one family per user', async () => {
+  await assertSucceeds(getDoc(doc(db('alice'), 'families/alpha')));
+  await assertFails(create('alice', 'second'));
+  await assertFails(setDoc(doc(db('bob'), 'families/orphan'), family('bob')));
+  await assertFails(setDoc(doc(db('bob'), 'memberships/bob'), membership('alpha')));
+});
+
+test('unverified and anonymous clients cannot access family data', async () => {
+  const guest = env.unauthenticatedContext().firestore();
+  await assertFails(getDoc(doc(guest, 'families/alpha')));
+  await assertFails(getDoc(doc(db('alice', false), 'families/alpha')));
+  await assertFails(getDoc(doc(guest, 'memberships/alice')));
+});
+
+test('membership is private, immutable, and cannot be forged', async () => {
+  await assertFails(updateDoc(doc(db('alice'), 'memberships/alice'), { familyId: 'other' }));
+  await assertFails(deleteDoc(doc(db('alice'), 'memberships/alice')));
+  await assertFails(setDoc(doc(db('alice'), 'memberships/bob'), membership('alpha')));
+  await assertFails(getDocs(collection(db('alice'), 'memberships')));
+  await assertFails(getDoc(doc(db('bob'), 'memberships/alice')));
+});
+
+test('only the owner manages invitations and strangers cannot enumerate', async () => {
+  await invite();
+  await assertSucceeds(getDocs(query(collection(db('alice'), 'invitations'), where('familyId', '==', 'alpha'))));
+  await assertSucceeds(getDoc(doc(db('bob'), 'invitations', code)));
+  await assertFails(getDocs(collection(db('bob'), 'invitations')));
+  await join('bob');
+  await assertFails(setDoc(doc(db('bob'), 'invitations', 'b'.repeat(32)), invitation()));
+  await assertFails(deleteDoc(doc(db('bob'), 'invitations', code)));
+  await assertFails(setDoc(doc(db('alice'), 'invitations/1234'), invitation()));
+  await assertFails(setDoc(doc(db('alice'), 'invitations', 'b'.repeat(32)), {
+    ...invitation(), expiresAt: Timestamp.fromMillis(Date.now() + 8 * 86400000),
+  }));
+  await assertSucceeds(deleteDoc(doc(db('alice'), 'invitations', code)));
+});
+
+test('join consumes a code atomically and grants only its family', async () => {
+  await invite();
+  await assertFails(setDoc(doc(db('bob'), 'memberships/bob'), membership('alpha', code)));
+  await assertFails(updateDoc(doc(db('bob'), 'invitations', code), {
+    acceptedBy: 'bob', acceptedAt: serverTimestamp(),
+  }));
+  await assertSucceeds(join('bob'));
+  await assertSucceeds(getDoc(doc(db('bob'), 'families/alpha')));
+  await assertFails(join('eve'));
+  await create('charlie', 'beta');
+  await assertFails(getDoc(doc(db('bob'), 'families/beta')));
+});
+
+test('family members can read only their own roster', async () => {
+  await invite();
+  await join('bob');
+  await create('eve', 'other');
+  await assertSucceeds(getDocs(collection(db('bob'), 'families/alpha/members')));
+  await assertSucceeds(getDoc(doc(db('alice'), 'families/alpha/members/bob')));
+  await assertFails(getDocs(collection(db('eve'), 'families/alpha/members')));
+  await assertFails(getDoc(doc(db('alice', false), 'families/alpha/members/alice')));
+});
+
+test('member profiles cannot be forged, changed, or removed', async () => {
+  const client = db('alice');
+  await assertFails(setDoc(doc(client, 'families/alpha/members/bob'), memberProfile('bob')));
+  await assertFails(updateDoc(doc(client, 'families/alpha/members/alice'), { role: 'member' }));
+  await assertFails(deleteDoc(doc(client, 'families/alpha/members/alice')));
+  await invite();
+  const bob = db('bob'), batch = writeBatch(bob);
+  batch.set(doc(bob, 'memberships/bob'), membership('alpha', code));
+  batch.update(doc(bob, 'invitations', code), { acceptedBy: 'bob', acceptedAt: serverTimestamp() });
+  batch.set(doc(bob, 'families/alpha/members/bob'), memberProfile('bob', 'owner'));
+  await assertFails(batch.commit());
+});
+
+test('a member can leave only by atomically removing both membership records', async () => {
+  await invite();
+  await join('bob');
+  const bob = db('bob');
+  const membershipRef = doc(bob, 'memberships/bob');
+  const profileRef = doc(bob, 'families/alpha/members/bob');
+  await assertFails(deleteDoc(membershipRef));
+  await assertFails(deleteDoc(profileRef));
+  const leave = writeBatch(bob);
+  leave.delete(profileRef);
+  leave.delete(membershipRef);
+  await assertSucceeds(leave.commit());
+  assert.equal((await getDoc(membershipRef)).exists(), false);
+  await assertFails(getDoc(doc(bob, 'families/alpha')));
+
+  const alice = db('alice');
+  const ownerLeave = writeBatch(alice);
+  ownerLeave.delete(doc(alice, 'families/alpha/members/alice'));
+  ownerLeave.delete(doc(alice, 'memberships/alice'));
+  await assertFails(ownerLeave.commit());
+});
+
+test('existing members can backfill only their own missing profile', async () => {
+  await env.withSecurityRulesDisabled(async context => {
+    await deleteDoc(doc(context.firestore(), 'families/alpha/members/alice'));
+  });
+  const client = db('alice');
+  const joinedAt = (await getDoc(doc(client, 'memberships/alice'))).data().joinedAt;
+  await assertSucceeds(setDoc(
+    doc(client, 'families/alpha/members/alice'),
+    memberProfile('alice', 'owner', joinedAt),
+  ));
+  await env.withSecurityRulesDisabled(async context => {
+    await deleteDoc(doc(context.firestore(), 'families/alpha/members/alice'));
+  });
+  await assertFails(setDoc(
+    doc(client, 'families/alpha/members/alice'),
+    memberProfile('mallory', 'owner', joinedAt),
+  ));
+});
+
+test('racing recipients cannot both consume one invitation', async () => {
+  await invite();
+  const results = await Promise.allSettled([join('bob'), join('eve')]);
+  assert.equal(results.filter(result => result.status === 'fulfilled').length, 1);
+});
+
+test('expired, revoked, mismatched and forged invitations fail', async () => {
+  await invite();
+  await assertFails(join('bob', code, 'other-family'));
+  await assertFails(updateDoc(doc(db('alice'), 'invitations', code), { familyId: 'other-family' }));
+  await env.withSecurityRulesDisabled(async context => {
+    await updateDoc(doc(context.firestore(), 'invitations', code), {
+      expiresAt: Timestamp.fromMillis(Date.now() - 1000),
+    });
+  });
+  await assertFails(join('bob'));
+  await deleteDoc(doc(db('alice'), 'invitations', code));
+  await assertFails(join('bob'));
+});
+
+test('family isolation covers event reads, queries, writes and deletes', async () => {
+  await create('eve', 'other');
+  const path = 'families/alpha/events/one';
+  await assertSucceeds(setDoc(doc(db('alice'), path), event()));
+  await assertFails(getDoc(doc(db('eve'), path)));
+  await assertFails(getDocs(collection(db('eve'), 'families/alpha/events')));
+  await assertFails(setDoc(doc(db('eve'), path), event('eve')));
+  await assertFails(deleteDoc(doc(db('eve'), path)));
+  await assertFails(updateDoc(doc(db('alice'), 'families/alpha'), { ownerId: 'eve' }));
+});
+
+test('members synchronize, update and delete an event', async () => {
+  await invite();
+  await join('bob');
+  const path = 'families/alpha/events/one';
+  const client = db('bob');
+  let stop;
+  const received = new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error('Listener timeout')), 8000);
+    const events = query(collection(client, 'families/alpha/events'),
+      where('year', '==', 2026), where('month', '==', 8), where('day', '==', 29));
+    stop = onSnapshot(events, snapshot => {
+      if (snapshot.docs.some(item => item.data().title === 'Ausflug')) {
+        clearTimeout(timer);
+        resolve();
+      }
+    }, error => { clearTimeout(timer); reject(error); });
+  });
+  try {
+    await setDoc(doc(db('alice'), path), event());
+    await received;
+  } finally {
+    if (stop) stop();
+  }
+  await assertSucceeds(updateDoc(doc(client, path), {
+    title: 'Gemeinsam geändert', revision: 2, updatedBy: 'bob', updatedAt: serverTimestamp(),
+  }));
+  assert.equal((await getDoc(doc(db('alice'), path))).data().title, 'Gemeinsam geändert');
+  await assertSucceeds(deleteDoc(doc(client, path)));
+  assert.equal((await getDoc(doc(db('alice'), path))).exists(), false);
+});
+
+test('creation and deletion activity is atomic, private, and authentic', async () => {
+  await invite();
+  await join('bob');
+  await create('eve', 'other');
+  const alice = db('alice'), eventRef = doc(alice, 'families/alpha/events', 'a'.repeat(32));
+  const createBatch = writeBatch(alice);
+  createBatch.set(eventRef, event());
+  createBatch.set(doc(alice, 'families/alpha/activity/create'), activity('created'));
+  await assertSucceeds(createBatch.commit());
+  await assertSucceeds(getDocs(collection(db('bob'), 'families/alpha/activity')));
+  await assertFails(getDocs(collection(db('eve'), 'families/alpha/activity')));
+  await assertFails(setDoc(
+    doc(db('bob'), 'families/alpha/activity/fake'),
+    activity('deleted', 'bob'),
+  ));
+  const bob = db('bob');
+  const deleteBatch = writeBatch(bob);
+  deleteBatch.delete(doc(bob, 'families/alpha/events', 'a'.repeat(32)));
+  deleteBatch.set(
+    doc(bob, 'families/alpha/activity/delete'),
+    activity('deleted', 'bob'),
+  );
+  await assertSucceeds(deleteBatch.commit());
+  await assertFails(updateDoc(
+    doc(db('alice'), 'families/alpha/activity/create'),
+    { title: 'Gefälscht' },
+  ));
+});
+
+test('invalid payloads, dates and skipped revisions are rejected', async () => {
+  const client = db('alice');
+  const ref = doc(client, 'families/alpha/events/one');
+  const invalid = [
+    { title: '' }, { title: 'x'.repeat(121) }, { notes: 'x'.repeat(2001) },
+    { month: 2, day: 30 }, { month: 2, day: 29 }, { endMinute: 540 },
+    { startMinute: -1 }, { endMinute: 1440 }, { revision: 2 },
+    { updatedBy: 'bob' }, { unknown: true },
+    { importance: 'urgent' }, { reminderMinutesBefore: 15 },
+  ];
+  for (const patch of invalid) await assertFails(setDoc(ref, { ...event(), ...patch }));
+  await assertSucceeds(setDoc(ref, { ...event(), year: 2028, month: 2, day: 29 }));
+  await assertFails(updateDoc(ref, { title: 'stale', updatedAt: serverTimestamp() }));
+});
+
+test('optimistic transaction refuses stale edits and resurrection', async () => {
+  const client = db('alice');
+  const ref = doc(client, 'families/alpha/events/one');
+  await setDoc(ref, event());
+  const save = expected => runTransaction(client, async transaction => {
+    const snapshot = await transaction.get(ref);
+    const revision = snapshot.exists() ? snapshot.data().revision : 0;
+    if (revision !== expected) throw new Error('conflict');
+    transaction.set(ref, { ...event(), revision: expected + 1 });
+  });
+  await save(1);
+  await assert.rejects(save(1), /conflict/);
+  await deleteDoc(ref);
+  await assert.rejects(save(2), /conflict/);
+});

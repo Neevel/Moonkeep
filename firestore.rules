@@ -1,0 +1,167 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function verified() {
+      return request.auth != null && request.auth.token.email_verified == true;
+    }
+    function profile(uid) {
+      return /databases/$(database)/documents/memberships/$(uid);
+    }
+    function familyPath(fid) {
+      return /databases/$(database)/documents/families/$(fid);
+    }
+    function invitePath(code) {
+      return /databases/$(database)/documents/invitations/$(code);
+    }
+    function eventPath(fid, eid) {
+      return /databases/$(database)/documents/families/$(fid)/events/$(eid);
+    }
+    function member(fid) {
+      return verified() && get(profile(request.auth.uid)).data.familyId == fid;
+    }
+    function owner(fid) {
+      return member(fid) && get(familyPath(fid)).data.ownerId == request.auth.uid;
+    }
+    function validInvitation(code, fid) {
+      let before = get(invitePath(code)).data;
+      let after = getAfter(invitePath(code)).data;
+      return before.familyId == fid && before.acceptedBy == null
+        && before.expiresAt > request.time
+        && after.acceptedBy == request.auth.uid && after.acceptedAt == request.time;
+    }
+    match /memberships/{uid} {
+      allow get: if verified() && uid == request.auth.uid;
+      allow create: if verified() && uid == request.auth.uid
+        && request.resource.data.keys().hasOnly(['familyId', 'invitationId', 'joinedAt'])
+        && request.resource.data.familyId is string
+        && request.resource.data.joinedAt == request.time
+        && ((request.resource.data.invitationId == null
+          && !exists(familyPath(request.resource.data.familyId))
+          && getAfter(familyPath(request.resource.data.familyId)).data.ownerId == uid)
+          || (request.resource.data.invitationId is string
+            && validInvitation(request.resource.data.invitationId, request.resource.data.familyId)));
+      allow delete: if verified() && uid == request.auth.uid
+        && resource.data.familyId is string
+        && get(familyPath(resource.data.familyId)).data.ownerId != uid
+        && !existsAfter(/databases/$(database)/documents/families/$(resource.data.familyId)/members/$(uid));
+      allow list, update: if false;
+    }
+    match /families/{fid} {
+      allow get: if member(fid);
+      allow create: if verified()
+        && request.resource.data.keys().hasOnly(['name', 'ownerId', 'timeZone', 'createdAt'])
+        && request.resource.data.name is string
+        && request.resource.data.name.size() >= 1 && request.resource.data.name.size() <= 80
+        && request.resource.data.ownerId == request.auth.uid
+        && request.resource.data.timeZone == 'Europe/Berlin'
+        && request.resource.data.createdAt == request.time
+        && !exists(profile(request.auth.uid))
+        && getAfter(profile(request.auth.uid)).data.familyId == fid
+        && getAfter(profile(request.auth.uid)).data.invitationId == null;
+      allow list, update, delete: if false;
+
+      match /members/{memberId} {
+        function validMemberProfile() {
+          return request.resource.data.keys().hasOnly(['email', 'role', 'joinedAt'])
+            && request.auth.token.email is string
+            && request.resource.data.email == request.auth.token.email
+            && request.resource.data.joinedAt
+              == getAfter(profile(request.auth.uid)).data.joinedAt
+            && request.resource.data.role
+              == (getAfter(familyPath(fid)).data.ownerId == request.auth.uid
+                ? 'owner' : 'member');
+        }
+        allow read: if member(fid);
+        allow create: if verified()
+          && memberId == request.auth.uid
+          && getAfter(profile(request.auth.uid)).data.familyId == fid
+          && validMemberProfile();
+        allow delete: if verified() && memberId == request.auth.uid
+          && get(profile(request.auth.uid)).data.familyId == fid
+          && get(familyPath(fid)).data.ownerId != request.auth.uid
+          && !existsAfter(profile(request.auth.uid));
+        allow update: if false;
+      }
+
+      match /events/{eid} {
+        function daysInMonth(y, m) {
+          return m == 2 ? ((y % 400 == 0 || (y % 4 == 0 && y % 100 != 0)) ? 29 : 28)
+            : (m in [4, 6, 9, 11] ? 30 : 31);
+        }
+        function validEvent(d) {
+          return d.keys().hasOnly(['title', 'notes', 'year', 'month', 'day',
+            'startMinute', 'endMinute', 'importance', 'reminderMinutesBefore',
+            'revision', 'updatedBy', 'updatedAt'])
+            && d.title is string && d.title.size() >= 1 && d.title.size() <= 120
+            && d.notes is string && d.notes.size() <= 2000
+            && d.year is int && d.year >= 1900 && d.year <= 2100
+            && d.month is int && d.month >= 1 && d.month <= 12
+            && d.day is int && d.day >= 1 && d.day <= daysInMonth(d.year, d.month)
+            && d.startMinute is int && d.startMinute >= 0
+            && d.endMinute is int && d.endMinute > d.startMinute && d.endMinute < 1440
+            && (!d.keys().hasAny(['importance'])
+              || d.importance in ['low', 'normal', 'high'])
+            && (!d.keys().hasAny(['reminderMinutesBefore'])
+              || d.reminderMinutesBefore == null
+              || d.reminderMinutesBefore in [0, 10, 30, 60, 1440])
+            && d.revision is int && d.updatedBy == request.auth.uid
+            && d.updatedAt == request.time;
+        }
+        allow read: if member(fid);
+        allow create: if member(fid) && validEvent(request.resource.data)
+          && request.resource.data.revision == 1;
+        allow update: if member(fid) && validEvent(request.resource.data)
+          && request.resource.data.revision == resource.data.revision + 1;
+        allow delete: if member(fid);
+      }
+
+      match /activity/{activityId} {
+        function validActivity() {
+          let d = request.resource.data;
+          let path = eventPath(fid, d.eventId);
+          return d.keys().hasOnly([
+              'action', 'eventId', 'title', 'actorId', 'createdAt'])
+            && d.action in ['created', 'deleted']
+            && d.eventId is string && d.eventId.matches('^[a-f0-9]{32}$')
+            && d.title is string && d.title.size() >= 1 && d.title.size() <= 120
+            && d.actorId == request.auth.uid
+            && d.createdAt == request.time
+            && ((d.action == 'created'
+                && !exists(path)
+                && getAfter(path).data.title == d.title
+                && getAfter(path).data.updatedBy == request.auth.uid)
+              || (d.action == 'deleted'
+                && exists(path)
+                && !existsAfter(path)
+                && get(path).data.title == d.title));
+        }
+        allow read: if member(fid);
+        allow create: if member(fid) && validActivity();
+        allow update, delete: if false;
+      }
+    }
+    match /invitations/{code} {
+      // A random 128-bit code is a bearer invitation, never a short guessable PIN.
+      allow get: if verified() && code.matches('^[a-f0-9]{32}$');
+      allow list: if owner(resource.data.familyId);
+      allow create: if code.matches('^[a-f0-9]{32}$')
+        && owner(request.resource.data.familyId)
+        && request.resource.data.keys().hasOnly(['familyId', 'createdAt', 'expiresAt', 'acceptedBy', 'acceptedAt'])
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.expiresAt is timestamp
+        && request.resource.data.expiresAt > request.time
+        && request.resource.data.expiresAt <= request.time + duration.value(7, 'd')
+        && request.resource.data.acceptedBy == null && request.resource.data.acceptedAt == null;
+      allow update: if verified() && resource.data.acceptedBy == null
+        && resource.data.expiresAt > request.time
+        && !exists(profile(request.auth.uid))
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['acceptedBy', 'acceptedAt'])
+        && request.resource.data.acceptedBy == request.auth.uid
+        && request.resource.data.acceptedAt == request.time
+        && getAfter(profile(request.auth.uid)).data.familyId == resource.data.familyId
+        && getAfter(profile(request.auth.uid)).data.invitationId == code;
+      allow delete: if owner(resource.data.familyId);
+    }
+    match /{document=**} { allow read, write: if false; }
+  }
+}
