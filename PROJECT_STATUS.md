@@ -1,6 +1,6 @@
 # Projektstand
 
-Stand: 29. August 2026  
+Stand: 30. August 2026  
 Version: `0.4.1+8`
 
 ## Aktueller Produktstand
@@ -35,9 +35,11 @@ Gemeinsame Kalenderdaten liegen in Cloud Firestore. Angezeigt wird nur bestätig
 - Aktivitätseinträge bei Erstellen und Löschen
 - Live-Hinweise für andere Mitglieder bei geöffnetem Kalender
 - normale Mitglieder können einen Kalender nach Bestätigung sicher verlassen
+- Besitzer können den Besitz atomar an ein bestehendes Mitglied übertragen;
+  der bisherige Besitzer wird dabei normales Mitglied
 - Kalenderverwaltung und Konto sind aus dem Kalenderkopf erreichbar
 
-Besitzer können den Kalender derzeit nicht verlassen.
+Besitzer können den Kalender weiterhin nicht verlassen oder auflösen.
 
 ## Architektur und Sicherheit
 
@@ -59,8 +61,8 @@ Besitzer können den Kalender derzeit nicht verlassen.
 Zuletzt vollständig erfolgreich:
 
 - `flutter analyze --no-pub`
-- `flutter test --no-pub`: 35 Tests
-- Firestore Emulator: 16 Regel-/Synchronisierungstests
+- `flutter test --no-pub`: 38 Tests
+- Firestore Emulator: 20 Regel-/Synchronisierungstests
 - Android Debug Build mit Firebase-Konfiguration
 
 Auf echten Android-Geräten bestätigt:
@@ -70,6 +72,10 @@ Auf echten Android-Geräten bestätigt:
 - zwei Konten auf zwei Geräten
 - gemeinsames Erstellen, Anzeigen und Löschen von Terminen
 - Live-Synchronisierung ohne manuelles Neuladen
+
+Im virtuellen Android-Gerät bestätigt:
+
+- atomare Übertragung des Kalenderbesitzes an ein bestehendes Mitglied
 
 Virtuelles Testgerät:
 
@@ -89,7 +95,8 @@ APK:
 
 Die korrigierte Version `0.4.1+8` wurde über Firebase App Distribution verteilt.
 
-Die aktuelle `firestore.rules`-Version ist veröffentlicht. Es gibt derzeit keine bekannten unveröffentlichten Regeländerungen.
+Die korrigierte `firestore.rules`-Version ist veröffentlicht und der
+Besitzerwechsel damit manuell bestätigt.
 
 Firebase CLI ist lokal nicht angemeldet.
 
@@ -97,7 +104,7 @@ Firebase CLI ist lokal nicht angemeldet.
 
 Priorität:
 
-1. Besitzerwechsel oder Kalenderauflösung
+1. Kalenderauflösung
 2. Kontolöschung
 
 Danach geräteübergreifend prüfen:

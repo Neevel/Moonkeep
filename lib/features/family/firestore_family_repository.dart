@@ -306,6 +306,52 @@ class FirestoreFamilyRepository implements FamilyRepository {
   }
 
   @override
+  Future<Family> transferOwnership(Family family, String newOwnerId) async {
+    final uid = _uid();
+    if (newOwnerId == uid) {
+      throw const FamilyFailure('Du besitzt diesen Kalender bereits.');
+    }
+    final familyRef = db.doc('families/${family.id}');
+    final oldOwnerRef = familyRef.collection('members').doc(uid);
+    final newOwnerRef = familyRef.collection('members').doc(newOwnerId);
+    final newOwnerMembershipRef = db.doc('memberships/$newOwnerId');
+    final result = await db.runTransaction((tx) async {
+      _checkSession(uid);
+      final currentFamily = await tx.get(familyRef);
+      final oldOwner = await tx.get(oldOwnerRef);
+      final newOwner = await tx.get(newOwnerRef);
+      final newOwnerMembership = await tx.get(newOwnerMembershipRef);
+      final data = currentFamily.data();
+      if (data == null || data['ownerId'] != uid) {
+        throw const FamilyFailure(
+          'Der Besitz wurde bereits geändert. Bitte aktualisiere die Ansicht.',
+        );
+      }
+      if (!oldOwner.exists || oldOwner.data()?['role'] != 'owner') {
+        throw const FamilyFailure('Die aktuelle Besitzerrolle ist ungültig.');
+      }
+      if (!newOwner.exists ||
+          newOwner.data()?['role'] != 'member' ||
+          !newOwnerMembership.exists ||
+          newOwnerMembership.data()?['familyId'] != family.id) {
+        throw const FamilyFailure(
+          'Das ausgewählte Mitglied gehört nicht mehr zu diesem Kalender.',
+        );
+      }
+      tx.update(familyRef, {'ownerId': newOwnerId});
+      tx.update(oldOwnerRef, {'role': 'member'});
+      tx.update(newOwnerRef, {'role': 'owner'});
+      return Family(
+        id: family.id,
+        name: data['name'] as String,
+        ownerId: newOwnerId,
+      );
+    });
+    _checkSession(uid);
+    return result;
+  }
+
+  @override
   CalendarRepository calendar(Family family) => FirestoreCalendarRepository(
     db: db,
     familyId: family.id,

@@ -30,6 +30,13 @@ async function join(uid, invitationCode = code, fid = 'alpha') {
   batch.set(doc(client, 'families', fid, 'members', uid), memberProfile(uid));
   await batch.commit();
 }
+async function transfer(client, fid, oldOwner, newOwner, familyChanges = {}) {
+  const batch = writeBatch(client);
+  batch.update(doc(client, 'families', fid), { ownerId: newOwner, ...familyChanges });
+  batch.update(doc(client, 'families', fid, 'members', oldOwner), { role: 'member' });
+  batch.update(doc(client, 'families', fid, 'members', newOwner), { role: 'owner' });
+  return batch.commit();
+}
 const event = (uid = 'alice') => ({ title: 'Ausflug', notes: '', year: 2026, month: 8, day: 29,
   startMinute: 540, endMinute: 600, importance: 'normal', reminderMinutesBefore: null,
   revision: 1, updatedBy: uid, updatedAt: serverTimestamp() });
@@ -65,6 +72,14 @@ test('membership is private, immutable, and cannot be forged', async () => {
   await assertFails(setDoc(doc(db('alice'), 'memberships/bob'), membership('alpha')));
   await assertFails(getDocs(collection(db('alice'), 'memberships')));
   await assertFails(getDoc(doc(db('bob'), 'memberships/alice')));
+});
+
+test('owner can inspect only memberships belonging to the owned family', async () => {
+  await invite();
+  await join('bob');
+  await create('eve', 'other');
+  await assertSucceeds(getDoc(doc(db('alice'), 'memberships/bob')));
+  await assertFails(getDoc(doc(db('alice'), 'memberships/eve')));
 });
 
 test('only the owner manages invitations and strangers cannot enumerate', async () => {
@@ -138,6 +153,55 @@ test('a member can leave only by atomically removing both membership records', a
   ownerLeave.delete(doc(alice, 'families/alpha/members/alice'));
   ownerLeave.delete(doc(alice, 'memberships/alice'));
   await assertFails(ownerLeave.commit());
+});
+
+test('ownership transfer atomically changes owner id and both roles', async () => {
+  await invite();
+  await join('bob');
+  await assertSucceeds(transfer(db('alice'), 'alpha', 'alice', 'bob'));
+  const client = db('bob');
+  assert.equal((await getDoc(doc(client, 'families/alpha'))).data().ownerId, 'bob');
+  assert.equal((await getDoc(doc(client, 'families/alpha/members/alice'))).data().role, 'member');
+  assert.equal((await getDoc(doc(client, 'families/alpha/members/bob'))).data().role, 'owner');
+});
+
+test('ownership transfer rejects unauthorized or incomplete transitions', async () => {
+  await invite();
+  await join('bob');
+
+  await assertFails(transfer(db('bob'), 'alpha', 'alice', 'bob'));
+  await assertFails(updateDoc(doc(db('alice'), 'families/alpha'), { ownerId: 'bob' }));
+  await assertFails(updateDoc(
+    doc(db('alice'), 'families/alpha/members/alice'),
+    { role: 'member' },
+  ));
+
+  await assertFails(transfer(
+    db('alice'), 'alpha', 'alice', 'bob', { name: 'Manipuliert' },
+  ));
+
+  const alice = db('alice');
+  const inconsistent = writeBatch(alice);
+  inconsistent.update(doc(alice, 'families/alpha'), { ownerId: 'bob' });
+  inconsistent.update(doc(alice, 'families/alpha/members/bob'), { role: 'owner' });
+  await assertFails(inconsistent.commit());
+});
+
+test('ownership transfer target must have matching profile and membership', async () => {
+  await create('eve', 'other');
+  await env.withSecurityRulesDisabled(async context => {
+    await setDoc(
+      doc(context.firestore(), 'families/alpha/members/eve'),
+      memberProfile('eve'),
+    );
+    await setDoc(
+      doc(context.firestore(), 'families/alpha/members/charlie'),
+      memberProfile('charlie'),
+    );
+  });
+  await assertFails(transfer(db('alice'), 'alpha', 'alice', 'eve'));
+  await assertFails(transfer(db('alice'), 'alpha', 'alice', 'charlie'));
+  await assertFails(transfer(db('alice'), 'alpha', 'alice', 'missing'));
 });
 
 test('existing members can backfill only their own missing profile', async () => {

@@ -203,6 +203,44 @@ class _FamilyScreenState extends State<FamilyScreen> {
     }, success: 'Du hast den Kalender verlassen.');
   }
 
+  Future<void> _transferOwnership(FamilyMember member) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Besitz übertragen?'),
+        content: Text(
+          'Besitz an ${member.email} übertragen? Danach bist du normales '
+          'Mitglied dieses Kalenders.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Abbrechen'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Besitz übertragen'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    await _run(() async {
+      final family = await widget.repository!.transferOwnership(
+        _family!,
+        member.id,
+      );
+      final members = await widget.repository!.members(family);
+      if (mounted) {
+        setState(() {
+          _family = family;
+          _members = members;
+          _invitations = [];
+        });
+      }
+    }, success: 'Der Besitz wurde übertragen.');
+  }
+
   @override
   Widget build(BuildContext context) => Scaffold(
     appBar: AppBar(
@@ -459,8 +497,8 @@ class _FamilyScreenState extends State<FamilyScreen> {
           leading: Icon(Icons.shield_outlined),
           title: Text('Du besitzt diesen Kalender'),
           subtitle: Text(
-            'Besitzerwechsel oder das Auflösen des Kalenders folgt in einem '
-            'späteren Schritt.',
+            'Über das Symbol neben einem Mitglied kannst du den Besitz '
+            'übertragen.',
           ),
         ),
       )
@@ -479,6 +517,17 @@ class _FamilyScreenState extends State<FamilyScreen> {
       ),
     ),
     title: Text(member.email),
-    trailing: Chip(label: Text(member.isOwner ? 'Besitzer' : 'Mitglied')),
+    trailing: Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Chip(label: Text(member.isOwner ? 'Besitzer' : 'Mitglied')),
+        if (!member.isOwner && widget.repository!.canInvite(_family!))
+          IconButton(
+            tooltip: 'Besitz an ${member.email} übertragen',
+            onPressed: _busy ? null : () => _transferOwnership(member),
+            icon: const Icon(Icons.manage_accounts_outlined),
+          ),
+      ],
+    ),
   );
 }

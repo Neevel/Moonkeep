@@ -40,5 +40,6 @@ abstract interface class FamilyRepository {
   Future<List<FamilyInvitation>> invitations(Family family);
   Future<void> revokeInvitation(String code);
   Future<void> leaveFamily(Family family);
+  Future<Family> transferOwnership(Family family, String newOwnerId);
   CalendarRepository calendar(Family family);
 }

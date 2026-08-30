@@ -36,7 +36,13 @@ class FakeFamily implements FamilyRepository {
     FamilyMember(id: 'owner', email: 'owner@example.test', isOwner: true),
     FamilyMember(id: 'member', email: 'member@example.test', isOwner: false),
   ];
-  int created = 0, joined = 0, invited = 0, revoked = 0, left = 0;
+  int created = 0,
+      joined = 0,
+      invited = 0,
+      revoked = 0,
+      left = 0,
+      transferred = 0;
+  FamilyFailure? transferFailure;
   @override
   bool canInvite(Family value) => value.ownerId == 'owner';
   @override
@@ -75,6 +81,25 @@ class FakeFamily implements FamilyRepository {
   Future<void> leaveFamily(Family value) async {
     left++;
     family = null;
+  }
+
+  @override
+  Future<Family> transferOwnership(Family value, String newOwnerId) async {
+    transferred++;
+    if (transferFailure != null) throw transferFailure!;
+    if (value.ownerId == newOwnerId) {
+      throw const FamilyFailure('Du besitzt diesen Kalender bereits.');
+    }
+    family = Family(id: value.id, name: value.name, ownerId: newOwnerId);
+    familyMembers = [
+      for (final member in familyMembers)
+        FamilyMember(
+          id: member.id,
+          email: member.email,
+          isOwner: member.id == newOwnerId,
+        ),
+    ];
+    return family!;
   }
 
   @override
@@ -195,6 +220,95 @@ void main() {
     expect(find.text('member@example.test'), findsOneWidget);
     expect(find.text('Besitzer'), findsOneWidget);
     expect(find.text('Mitglied'), findsOneWidget);
+  });
+
+  testWidgets('owner transfers ownership to an existing member', (
+    tester,
+  ) async {
+    final (_, family) = await open(tester);
+    family.family = const Family(id: 'family', name: 'Jeske', ownerId: 'owner');
+    await tester.tap(find.text('Aktualisieren'));
+    await tester.pumpAndSettle();
+    expect(
+      find.byTooltip('Besitz an member@example.test übertragen'),
+      findsOneWidget,
+    );
+    expect(
+      find.byTooltip('Besitz an owner@example.test übertragen'),
+      findsNothing,
+    );
+    await tester.tap(
+      find.byTooltip('Besitz an member@example.test übertragen'),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Besitz übertragen?'), findsOneWidget);
+    expect(
+      find.textContaining('Danach bist du normales Mitglied'),
+      findsOneWidget,
+    );
+    await tester.tap(find.widgetWithText(FilledButton, 'Besitz übertragen'));
+    await tester.pumpAndSettle();
+    expect(family.transferred, 1);
+    expect(family.family!.ownerId, 'member');
+    final newOwnerTile = find.ancestor(
+      of: find.text('member@example.test'),
+      matching: find.byType(ListTile),
+    );
+    final oldOwnerTile = find.ancestor(
+      of: find.text('owner@example.test'),
+      matching: find.byType(ListTile),
+    );
+    expect(
+      find.descendant(of: newOwnerTile, matching: find.text('Besitzer')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: oldOwnerTile, matching: find.text('Mitglied')),
+      findsOneWidget,
+    );
+    expect(find.text('Der Besitz wurde übertragen.'), findsOneWidget);
+    expect(find.text('Einladungscode erzeugen'), findsNothing);
+    expect(find.byIcon(Icons.manage_accounts_outlined), findsNothing);
+  });
+
+  testWidgets('normal members cannot transfer ownership', (tester) async {
+    final (_, family) = await open(tester);
+    family.family = const Family(
+      id: 'family',
+      name: 'Jeske',
+      ownerId: 'different-owner',
+    );
+    await tester.tap(find.text('Aktualisieren'));
+    await tester.pumpAndSettle();
+    expect(find.byIcon(Icons.manage_accounts_outlined), findsNothing);
+  });
+
+  testWidgets('ownership transfer failure remains understandable', (
+    tester,
+  ) async {
+    final (_, family) = await open(tester);
+    family.family = const Family(id: 'family', name: 'Jeske', ownerId: 'owner');
+    family.transferFailure = const FamilyFailure(
+      'Das ausgewählte Mitglied gehört nicht mehr zu diesem Kalender.',
+    );
+    await tester.tap(find.text('Aktualisieren'));
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byTooltip('Besitz an member@example.test übertragen'),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(FilledButton, 'Besitz übertragen'));
+    await tester.pumpAndSettle();
+    expect(
+      find.text(
+        'Das ausgewählte Mitglied gehört nicht mehr zu diesem Kalender.',
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.byTooltip('Besitz an member@example.test übertragen'),
+      findsOneWidget,
+    );
   });
 
   testWidgets('member confirms leaving the shared calendar', (tester) async {

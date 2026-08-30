@@ -11,6 +11,8 @@
 ## Verbindlicher Stand
 
 - Vor Arbeiten zuerst `PROJECT_STATUS.md` gezielt auf den aktuellen Task prüfen.
+- Bei einem fortgesetzten Task zuerst `CURRENT_WORK.md` lesen; sie ist der
+  kurze operative Wiedereinstieg und ersetzt keine Produktdokumentation.
 - Bereits dokumentierte Architektur oder Entscheidungen nicht erneut aus dem Code rekonstruieren, sofern kein konkreter Widerspruch besteht.
 - `PROJECT_STATUS.md` nach abgeschlossenen größeren Änderungen knapp aktualisieren.
 - Firebase-Konfiguration kommt aus `config/firebase.android.json`; Geheimnisse niemals ausgeben oder einchecken.
@@ -80,3 +82,5 @@ pnpm test:rules
   - welche Tests erfolgreich waren,
   - ob noch etwas offen ist.
 - `PROJECT_STATUS.md` nur mit Informationen aktualisieren, die für einen zukünftigen Task weiterhin relevant sind.
+- `CURRENT_WORK.md` nur mit Task, sicherem Zwischenstand und nächstem Schritt
+  aktuell halten; nach Abschluss wieder auf „kein laufender Task“ setzen.
