@@ -11,6 +11,8 @@ void main() {
       start: DateTime.utc(2028, 2, 29, 9, 15),
       end: DateTime.utc(2028, 2, 29, 10, 45),
       revision: 4,
+      recurrence: EventRecurrence.yearly,
+      recurrenceEnd: DateTime.utc(2032, 2, 29),
     );
     final data = sharedEventData(original);
     expect(data['revision'], 5);
@@ -20,6 +22,8 @@ void main() {
     expect(restored.title, 'Ausflug');
     expect(restored.notes, 'Treffpunkt');
     expect(restored.revision, 5);
+    expect(restored.recurrence, EventRecurrence.yearly);
+    expect(restored.recurrenceEnd, DateTime.utc(2032, 2, 29));
   });
 
   test('shared event parser rejects impossible dates and intervals', () {
@@ -43,6 +47,14 @@ void main() {
     );
     expect(
       () => sharedEvent('one', {...valid, 'revision': 0}),
+      throwsFormatException,
+    );
+    expect(sharedEvent('one', valid).recurrence, EventRecurrence.none);
+    expect(
+      () => sharedEvent('one', {
+        ...valid,
+        'recurrence': {'frequency': 'sometimes'},
+      }),
       throwsFormatException,
     );
   });

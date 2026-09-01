@@ -156,9 +156,15 @@ class _CalendarScreenState extends State<CalendarScreen> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Termin löschen?'),
+        title: Text(
+          event.recurrence == EventRecurrence.none
+              ? 'Termin löschen?'
+              : 'Terminserie löschen?',
+        ),
         content: Text(
-          _store!.isShared
+          event.recurrence != EventRecurrence.none
+              ? '„${event.title}“ und alle Wiederholungen werden für alle Mitglieder gelöscht.'
+              : _store!.isShared
               ? '„${event.title}“ wird für alle Familienmitglieder gelöscht.'
               : '„${event.title}“ wird von diesem Gerät gelöscht.',
         ),
@@ -418,6 +424,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
               subtitle: Text(
                 '${TimeOfDay.fromDateTime(event.start).format(context)} – '
                 '${TimeOfDay.fromDateTime(event.end).format(context)}'
+                '${event.recurrence == EventRecurrence.none ? '' : '\n${event.recurrence.label}${event.recurrenceEnd == null ? '' : ' bis ${MaterialLocalizations.of(context).formatShortDate(event.recurrenceEnd!)}'}'}'
                 '${event.notes.isEmpty ? '' : '\n${event.notes}'}',
               ),
               onTap: _busy ? null : () => _edit(event),

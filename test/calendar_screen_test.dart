@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:moonkeep/app.dart';
+import 'package:moonkeep/features/calendar/calendar_event.dart';
 import 'package:moonkeep/features/calendar/calendar_store.dart';
 
 void main() {
@@ -38,6 +39,7 @@ void main() {
     expect(find.text('Picknick im Park'), findsOneWidget);
     expect(find.text('Picknick'), findsNothing);
 
+    await tester.ensureVisible(find.byTooltip('Termin löschen'));
     await tester.tap(find.byTooltip('Termin löschen'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Abbrechen'));
@@ -62,6 +64,58 @@ void main() {
     await tester.tap(find.text('Abbrechen'));
     await tester.pumpAndSettle();
     expect(store.eventsOn(DateTime.now()), isEmpty);
+  });
+
+  testWidgets('creates, edits, and deletes a complete recurring series', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(600, 1200);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final store = emptyStore();
+    await tester.pumpWidget(MoonkeepApp(store: store));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Termin anlegen'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextFormField).first, 'Training');
+    await tester.ensureVisible(find.text('Keine Wiederholung'));
+    await tester.tap(find.text('Keine Wiederholung'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Wöchentlich').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Speichern'));
+    await tester.pumpAndSettle();
+
+    expect(store.allEvents, hasLength(1));
+    expect(store.allEvents.single.recurrence, EventRecurrence.weekly);
+    expect(find.textContaining('Wöchentlich'), findsOneWidget);
+
+    await tester.tap(find.text('Training'));
+    await tester.pumpAndSettle();
+    expect(find.text('Serie bearbeiten'), findsOneWidget);
+    expect(
+      find.text('Änderungen gelten für die gesamte Terminserie.'),
+      findsOneWidget,
+    );
+    await tester.ensureVisible(find.text('Wöchentlich'));
+    await tester.tap(find.text('Wöchentlich'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Täglich').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Speichern'));
+    await tester.pumpAndSettle();
+    expect(store.allEvents.single.recurrence, EventRecurrence.daily);
+
+    await tester.ensureVisible(find.byTooltip('Termin löschen'));
+    await tester.tap(find.byTooltip('Termin löschen'));
+    await tester.pumpAndSettle();
+    expect(find.text('Terminserie löschen?'), findsOneWidget);
+    expect(find.textContaining('alle Wiederholungen'), findsOneWidget);
+    await tester.tap(find.text('Löschen'));
+    await tester.pumpAndSettle();
+    expect(store.allEvents, isEmpty);
   });
 
   testWidgets('shows storage load failure without allowing new events', (

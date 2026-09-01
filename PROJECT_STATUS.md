@@ -1,6 +1,6 @@
 # Projektstand
 
-Stand: 30. August 2026  
+Stand: 1. September 2026  
 Version: `0.4.1+8`
 
 ## Aktueller Produktstand
@@ -27,6 +27,12 @@ Gemeinsame Kalenderdaten liegen in Cloud Firestore. Angezeigt wird nur bestätig
 - Mitgliederliste mit Besitzer-/Mitglied-Rollen
 - sichere Einladungscodes mit Ablauf, Widerruf und atomarem Einmalverbrauch
 - gemeinsame Terminverwaltung
+- wiederkehrende Termine täglich, wöchentlich, zweiwöchentlich, monatlich oder
+  jährlich mit optionalem Enddatum
+- eine Terminserie bleibt ein Firestore-Dokument; bestehende alte Termine ohne
+  Wiederholungsdaten bleiben als einmalige Termine kompatibel
+- monatliche Serien überspringen Monate ohne den ursprünglichen Kalendertag
+- Bearbeiten und Löschen betreffen aktuell jeweils die gesamte Terminserie
 - Live-Synchronisierung zwischen Mitgliedern/Geräten
 - Revisionsschutz gegen veraltete Änderungen
 - drei Wichtigkeitsstufen für Termine
@@ -37,9 +43,9 @@ Gemeinsame Kalenderdaten liegen in Cloud Firestore. Angezeigt wird nur bestätig
 - normale Mitglieder können einen Kalender nach Bestätigung sicher verlassen
 - Besitzer können den Besitz atomar an ein bestehendes Mitglied übertragen;
   der bisherige Besitzer wird dabei normales Mitglied
+- Besitzer können einen Kalender Spark-kompatibel auflösen; aufgelöste Kalender
+  sind für alle bisherigen Mitglieder gesperrt
 - Kalenderverwaltung und Konto sind aus dem Kalenderkopf erreichbar
-
-Besitzer können den Kalender weiterhin nicht verlassen oder auflösen.
 
 ## Architektur und Sicherheit
 
@@ -72,10 +78,15 @@ Auf echten Android-Geräten bestätigt:
 - zwei Konten auf zwei Geräten
 - gemeinsames Erstellen, Anzeigen und Löschen von Terminen
 - Live-Synchronisierung ohne manuelles Neuladen
+- wiederkehrende Termine mit zwei Mitgliedern: wöchentliche Serie mit Enddatum,
+  begrenzte Vorkommen, Live-Synchronisierung, serienweite Bearbeitung und
+  vollständiges Löschen erfolgreich geprüft
 
 Im virtuellen Android-Gerät bestätigt:
 
 - atomare Übertragung des Kalenderbesitzes an ein bestehendes Mitglied
+- Spark-kompatible Kalenderauflösung mit Rückfall zur Kalendereinrichtung für
+  Owner und bisherige Mitglieder
 
 Virtuelles Testgerät:
 
@@ -95,17 +106,17 @@ APK:
 
 Die korrigierte Version `0.4.1+8` wurde über Firebase App Distribution verteilt.
 
-Die korrigierte `firestore.rules`-Version ist veröffentlicht und der
-Besitzerwechsel damit manuell bestätigt.
+Die aktuelle `firestore.rules`-Version wurde erfolgreich veröffentlicht.
+Besitzerwechsel, Kalenderauflösung und wiederkehrende Termine sind damit
+manuell bestätigt.
 
-Firebase CLI ist lokal nicht angemeldet.
+Firebase CLI ist lokal angemeldet.
 
 ## Nächste Tasks
 
 Priorität:
 
-1. Kalenderauflösung
-2. Kontolöschung
+1. Kontolöschung
 
 Danach geräteübergreifend prüfen:
 

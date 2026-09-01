@@ -54,6 +54,84 @@ void main() {
     expect(restored.reminderMinutesBefore, 30);
   });
 
+  test('old one-time events remain compatible without recurrence fields', () {
+    final restored = CalendarEvent.fromJson({
+      'id': 'old',
+      'title': 'Altbestand',
+      'start': '2026-08-28T09:00:00.000',
+      'end': '2026-08-28T10:00:00.000',
+      'notes': '',
+      'importance': 'normal',
+      'reminderMinutesBefore': null,
+    });
+    expect(restored.recurrence, EventRecurrence.none);
+    expect(restored.occursOn(DateTime(2026, 8, 28)), isTrue);
+    expect(restored.occursOn(DateTime(2026, 8, 29)), isFalse);
+  });
+
+  test(
+    'calculates supported recurrences without materializing occurrences',
+    () {
+      CalendarEvent recurring(EventRecurrence recurrence, {DateTime? end}) =>
+          CalendarEvent(
+            id: recurrence.name,
+            title: recurrence.label,
+            start: DateTime(2026, 1, 1, 9),
+            end: DateTime(2026, 1, 1, 10),
+            recurrence: recurrence,
+            recurrenceEnd: end,
+          );
+
+      expect(
+        recurring(EventRecurrence.daily).occursOn(DateTime(2026, 1, 2)),
+        isTrue,
+      );
+      expect(
+        recurring(EventRecurrence.weekly).occursOn(DateTime(2026, 1, 8)),
+        isTrue,
+      );
+      expect(
+        recurring(EventRecurrence.weekly).occursOn(DateTime(2026, 1, 9)),
+        isFalse,
+      );
+      expect(
+        recurring(EventRecurrence.biweekly).occursOn(DateTime(2026, 1, 15)),
+        isTrue,
+      );
+      expect(
+        recurring(EventRecurrence.biweekly).occursOn(DateTime(2026, 1, 8)),
+        isFalse,
+      );
+      expect(
+        recurring(EventRecurrence.monthly).occursOn(DateTime(2026, 2, 1)),
+        isTrue,
+      );
+      expect(
+        recurring(EventRecurrence.yearly).occursOn(DateTime(2027, 1, 1)),
+        isTrue,
+      );
+
+      final limited = recurring(
+        EventRecurrence.daily,
+        end: DateTime(2026, 1, 3),
+      );
+      expect(limited.occursOn(DateTime(2026, 1, 3)), isTrue);
+      expect(limited.occursOn(DateTime(2026, 1, 4)), isFalse);
+    },
+  );
+
+  test('monthly recurrence on day 31 skips months without that day', () {
+    final event = CalendarEvent(
+      id: 'month-end',
+      title: 'Monatsende',
+      start: DateTime(2026, 1, 31, 9),
+      end: DateTime(2026, 1, 31, 10),
+      recurrence: EventRecurrence.monthly,
+    );
+    expect(event.occursOn(DateTime(2026, 2, 28)), isFalse);
+    expect(event.occursOn(DateTime(2026, 3, 31)), isTrue);
+  });
+
   test('persists creates, edits and deletes across store instances', () async {
     String? disk;
     CalendarStore newStore() => CalendarStore(

@@ -17,6 +17,15 @@ Map<String, Object?> sharedEventData(CalendarEvent event) => {
   'endMinute': event.end.hour * 60 + event.end.minute,
   'importance': event.importance.name,
   'reminderMinutesBefore': event.reminderMinutesBefore,
+  if (event.recurrence != EventRecurrence.none)
+    'recurrence': {
+      'frequency': event.recurrence.name,
+      if (event.recurrenceEnd != null) ...{
+        'endYear': event.recurrenceEnd!.year,
+        'endMonth': event.recurrenceEnd!.month,
+        'endDay': event.recurrenceEnd!.day,
+      },
+    },
   'revision': event.revision + 1,
 };
 
@@ -30,6 +39,9 @@ CalendarEvent sharedEvent(String id, Map<String, dynamic> data) {
     orElse: () => EventImportance.normal,
   );
   final reminder = data['reminderMinutesBefore'];
+  final recurrenceData = data['recurrence'];
+  var recurrence = EventRecurrence.none;
+  DateTime? recurrenceEnd;
   final date = DateTime.utc(y, m, d);
   if (date.year != y ||
       date.month != m ||
@@ -44,6 +56,40 @@ CalendarEvent sharedEvent(String id, Map<String, dynamic> data) {
       (data['revision'] as int) < 1) {
     throw const FormatException('Ungültiger gemeinsamer Termin.');
   }
+  if (recurrenceData != null) {
+    if (recurrenceData is! Map<String, dynamic>) {
+      throw const FormatException('Ungültige Terminwiederholung.');
+    }
+    recurrence = EventRecurrence.values.firstWhere(
+      (value) =>
+          value != EventRecurrence.none &&
+          value.name == recurrenceData['frequency'],
+      orElse: () =>
+          throw const FormatException('Ungültige Terminwiederholung.'),
+    );
+    final endValues = [
+      recurrenceData['endYear'],
+      recurrenceData['endMonth'],
+      recurrenceData['endDay'],
+    ];
+    if (endValues.any((value) => value != null)) {
+      if (endValues.any((value) => value is! int)) {
+        throw const FormatException('Ungültiges Wiederholungsende.');
+      }
+      final endDate = DateTime.utc(
+        endValues[0]! as int,
+        endValues[1]! as int,
+        endValues[2]! as int,
+      );
+      if (endDate.year != endValues[0] ||
+          endDate.month != endValues[1] ||
+          endDate.day != endValues[2] ||
+          endDate.isBefore(date)) {
+        throw const FormatException('Ungültiges Wiederholungsende.');
+      }
+      recurrenceEnd = endDate;
+    }
+  }
   return CalendarEvent(
     id: id,
     title: data['title'] as String,
@@ -53,6 +99,8 @@ CalendarEvent sharedEvent(String id, Map<String, dynamic> data) {
     revision: data['revision'] as int,
     importance: importance,
     reminderMinutesBefore: reminder as int?,
+    recurrence: recurrence,
+    recurrenceEnd: recurrenceEnd,
   );
 }
 
@@ -209,7 +257,7 @@ class FirestoreCalendarRepository extends CalendarRepository {
   @override
   List<CalendarEvent> eventsOn(DateTime day) {
     if (!sessionValid(uid)) return [];
-    return _events.where((e) => isSameDay(e.start, day)).toList()..sort(
+    return _events.where((e) => e.occursOn(day)).toList()..sort(
       (a, b) => a.start.compareTo(b.start) != 0
           ? a.start.compareTo(b.start)
           : a.id.compareTo(b.id),

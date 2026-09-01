@@ -47,11 +47,10 @@ class CalendarStore extends CalendarRepository {
 
   @override
   List<CalendarEvent> eventsOn(DateTime day) =>
-      _events.where((event) => isSameDay(event.start, day)).toList()
-        ..sort((a, b) {
-          final byTime = a.start.compareTo(b.start);
-          return byTime == 0 ? a.id.compareTo(b.id) : byTime;
-        });
+      _events.where((event) => event.occursOn(day)).toList()..sort((a, b) {
+        final byTime = a.start.compareTo(b.start);
+        return byTime == 0 ? a.id.compareTo(b.id) : byTime;
+      });
 
   @override
   Future<void> save(CalendarEvent event) => _persist([
