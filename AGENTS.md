@@ -49,21 +49,30 @@
 
 ## Tests
 
-- Während der Implementierung zuerst nur betroffene Tests ausführen.
+- Während eines Tasks nur gezielte, betroffene Tests ausführen.
+- Bevorzugt einzelne Testdateien oder gezielte Testnamen ausführen.
 - Bestehende Flutter-Tests und Fixtures erweitern, statt parallele Testdateien anzulegen.
-- Nicht nach jeder kleinen Änderung die komplette Testsuite starten.
-- Vor Abschluss eines Tasks einmal ausführen:
-
-```powershell
-.\.tools\flutter\bin\flutter.bat analyze --no-pub
-.\.tools\flutter\bin\flutter.bat test --no-pub
-```
-
-- `pnpm test:rules` nur ausführen, wenn Firestore-Regeln betroffen sind oder vor einem entsprechenden Release:
-
-```powershell
-pnpm test:rules
-```
+- Keine komplette Flutter-Test-Suite nach jeder Feature-Änderung ausführen.
+- `flutter analyze --no-pub` nur einmal am Ende eines größeren Tasks oder wenn
+  statische Fehler vermutet werden.
+- `flutter test --no-pub` vollständig nur ausführen:
+  - vor Release- oder Distributionsständen,
+  - bei breit wirkenden Änderungen,
+  - wenn der Nutzer es ausdrücklich anfordert,
+  - oder wenn gezielte Tests Hinweise auf Seiteneffekte geben.
+- `pnpm test:rules` nur ausführen, wenn `firestore.rules` geändert wurde oder ein
+  Rules-Release vorbereitet wird.
+- Bei erfolgreichen Testläufen keine langen Ausgaben weiter analysieren oder
+  wiederholen.
+- Bei Fehlern nur die relevante Fehlermeldung oder den betroffenen Test weiter
+  untersuchen.
+- Tests nicht erneut starten, wenn derselbe unveränderte Stand bereits
+  erfolgreich geprüft wurde.
+- Wenn eine manuelle Prüfung durch den Nutzer ausreicht, diese statt zusätzlicher
+  visueller oder redundanter Testläufe verwenden.
+- Vor Task-Abschluss kurz dokumentieren, welche gezielten Tests tatsächlich
+  ausgeführt wurden.
+- Vollständige Abschluss-Suites sind nicht pauschal Pflicht.
 
 ## Flutter-Entwicklung
 
