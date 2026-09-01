@@ -9,13 +9,14 @@ let env;
 const code = 'a'.repeat(32);
 const db = (uid, verified = true) => env.authenticatedContext(uid, { email_verified: verified, email: `${uid}@example.test` }).firestore();
 const membership = (fid, invitationId = null) => ({ familyId: fid, invitationId, joinedAt: serverTimestamp() });
-const family = (uid) => ({ name: 'Testfamilie', ownerId: uid, timeZone: 'Europe/Berlin', createdAt: serverTimestamp() });
+const family = (uid, status) => ({ name: 'Testfamilie', ownerId: uid,
+  ...(status == null ? {} : { status }), timeZone: 'Europe/Berlin', createdAt: serverTimestamp() });
 const memberProfile = (uid, role = 'member', joinedAt = serverTimestamp()) => ({
   email: `${uid}@example.test`, role, joinedAt,
 });
-async function create(uid, fid) {
+async function create(uid, fid, status) {
   const client = db(uid), batch = writeBatch(client);
-  batch.set(doc(client, 'families', fid), family(uid));
+  batch.set(doc(client, 'families', fid), family(uid, status));
   batch.set(doc(client, 'memberships', uid), membership(fid));
   batch.set(doc(client, 'families', fid, 'members', uid), memberProfile(uid, 'owner'));
   await batch.commit();
@@ -37,6 +38,12 @@ async function transfer(client, fid, oldOwner, newOwner, familyChanges = {}) {
   batch.update(doc(client, 'families', fid, 'members', newOwner), { role: 'owner' });
   return batch.commit();
 }
+async function dissolve(client, uid = 'alice', fid = 'alpha') {
+  const batch = writeBatch(client);
+  batch.update(doc(client, 'families', fid), { status: 'dissolved' });
+  batch.delete(doc(client, 'memberships', uid));
+  return batch.commit();
+}
 const event = (uid = 'alice') => ({ title: 'Ausflug', notes: '', year: 2026, month: 8, day: 29,
   startMinute: 540, endMinute: 600, importance: 'normal', reminderMinutesBefore: null,
   revision: 1, updatedBy: uid, updatedAt: serverTimestamp() });
@@ -54,6 +61,7 @@ after(async () => { if (env) await env.cleanup(); });
 
 test('family creation is atomic and limited to one family per user', async () => {
   await assertSucceeds(getDoc(doc(db('alice'), 'families/alpha')));
+  await assertSucceeds(create('charlie', 'active-family', 'active'));
   await assertFails(create('alice', 'second'));
   await assertFails(setDoc(doc(db('bob'), 'families/orphan'), family('bob')));
   await assertFails(setDoc(doc(db('bob'), 'memberships/bob'), membership('alpha')));
@@ -204,6 +212,68 @@ test('ownership transfer target must have matching profile and membership', asyn
   await assertFails(transfer(db('alice'), 'alpha', 'alice', 'missing'));
 });
 
+test('only owner can atomically dissolve an active family', async () => {
+  await invite();
+  await join('bob');
+  await assertFails(updateDoc(doc(db('bob'), 'families/alpha'), {
+    status: 'dissolved',
+  }));
+  await assertFails(updateDoc(doc(db('alice'), 'families/alpha'), {
+    status: 'dissolved',
+  }));
+  await assertFails(dissolve(db('bob'), 'bob'));
+  await assertSucceeds(dissolve(db('alice')));
+
+  await env.withSecurityRulesDisabled(async context => {
+    const snapshot = await getDoc(doc(context.firestore(), 'families/alpha'));
+    assert.equal(snapshot.data().status, 'dissolved');
+    assert.equal((await getDoc(doc(context.firestore(), 'memberships/alice'))).exists(), false);
+  });
+});
+
+test('dissolved family blocks calendar data and lets stale members clean up', async () => {
+  await invite();
+  await join('bob');
+  await setDoc(doc(db('alice'), 'families/alpha/events/one'), event());
+  await assertSucceeds(dissolve(db('alice')));
+
+  const bob = db('bob');
+  await assertSucceeds(getDoc(doc(bob, 'families/alpha')));
+  await assertFails(getDocs(collection(bob, 'families/alpha/members')));
+  await assertFails(getDoc(doc(bob, 'families/alpha/events/one')));
+  await assertFails(setDoc(doc(bob, 'families/alpha/events/two'), event('bob')));
+  await assertFails(getDocs(collection(bob, 'families/alpha/activity')));
+  await assertFails(getDoc(doc(bob, 'invitations', code)));
+
+  const cleanup = writeBatch(bob);
+  cleanup.delete(doc(bob, 'families/alpha/members/bob'));
+  cleanup.delete(doc(bob, 'memberships/bob'));
+  await assertSucceeds(cleanup.commit());
+  await assertFails(getDoc(doc(bob, 'families/alpha')));
+});
+
+test('dissolved family rejects reactivation, transfer, join, and invitations', async () => {
+  await invite();
+  await join('bob');
+  const secondCode = 'b'.repeat(32);
+  await setDoc(doc(db('alice'), 'invitations', secondCode), invitation());
+  await env.withSecurityRulesDisabled(async context => {
+    await updateDoc(doc(context.firestore(), 'families/alpha'), {
+      status: 'dissolved',
+    });
+  });
+
+  await assertFails(updateDoc(doc(db('alice'), 'families/alpha'), {
+    status: 'active',
+  }));
+  await assertFails(transfer(db('alice'), 'alpha', 'alice', 'bob'));
+  await assertFails(join('charlie', secondCode));
+  await assertFails(setDoc(
+    doc(db('alice'), 'invitations', 'c'.repeat(32)),
+    invitation(),
+  ));
+});
+
 test('existing members can backfill only their own missing profile', async () => {
   await env.withSecurityRulesDisabled(async context => {
     await deleteDoc(doc(context.firestore(), 'families/alpha/members/alice'));
@@ -283,6 +353,32 @@ test('members synchronize, update and delete an event', async () => {
   assert.equal((await getDoc(doc(db('alice'), path))).data().title, 'Gemeinsam geändert');
   await assertSucceeds(deleteDoc(doc(client, path)));
   assert.equal((await getDoc(doc(db('alice'), path))).exists(), false);
+});
+
+test('recurring event fields are validated without breaking old events', async () => {
+  const client = db('alice');
+  await assertSucceeds(setDoc(doc(client, 'families/alpha/events/old'), event()));
+  await assertSucceeds(setDoc(doc(client, 'families/alpha/events/recurring'), {
+    ...event(),
+    recurrence: {
+      frequency: 'monthly', endYear: 2027, endMonth: 8, endDay: 29,
+    },
+  }));
+  await assertFails(setDoc(doc(client, 'families/alpha/events/bad-frequency'), {
+    ...event(), recurrence: { frequency: 'sometimes' },
+  }));
+  await assertFails(setDoc(doc(client, 'families/alpha/events/bad-end'), {
+    ...event(),
+    recurrence: {
+      frequency: 'daily', endYear: 2026, endMonth: 2, endDay: 30,
+    },
+  }));
+  await assertFails(setDoc(doc(client, 'families/alpha/events/early-end'), {
+    ...event(),
+    recurrence: {
+      frequency: 'daily', endYear: 2026, endMonth: 8, endDay: 28,
+    },
+  }));
 });
 
 test('creation and deletion activity is atomic, private, and authentic', async () => {

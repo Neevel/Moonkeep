@@ -41,12 +41,20 @@ class FakeFamily implements FamilyRepository {
       invited = 0,
       revoked = 0,
       left = 0,
-      transferred = 0;
+      transferred = 0,
+      dissolved = 0;
   FamilyFailure? transferFailure;
   @override
   bool canInvite(Family value) => value.ownerId == 'owner';
   @override
-  Future<Family?> loadFamily() async => family;
+  Future<Family?> loadFamily() async {
+    if (family?.isActive == false) {
+      family = null;
+      return null;
+    }
+    return family;
+  }
+
   @override
   Future<Family> createFamily(String name) async {
     created++;
@@ -100,6 +108,17 @@ class FakeFamily implements FamilyRepository {
         ),
     ];
     return family!;
+  }
+
+  @override
+  Future<void> dissolveFamily(Family value) async {
+    if (value.ownerId != 'owner' || !value.isActive) {
+      throw const FamilyFailure(
+        'Nur der aktuelle Besitzer kann diesen Kalender auflösen.',
+      );
+    }
+    dissolved++;
+    family = null;
   }
 
   @override
@@ -331,5 +350,76 @@ void main() {
       findsOneWidget,
     );
     expect(find.text('Du hast den Kalender verlassen.'), findsOneWidget);
+  });
+
+  testWidgets('only owner sees dissolution and returns to calendar setup', (
+    tester,
+  ) async {
+    final (_, family) = await open(tester);
+    family.family = const Family(id: 'family', name: 'Jeske', ownerId: 'owner');
+    await tester.tap(find.text('Aktualisieren'));
+    await tester.pumpAndSettle();
+    expect(find.text('Kalender auflösen'), findsOneWidget);
+
+    await tester.tap(find.text('Kalender auflösen'));
+    await tester.pumpAndSettle();
+    expect(find.text('Kalender endgültig auflösen?'), findsOneWidget);
+    expect(
+      find.text(
+        'Der gemeinsame Kalender wird für alle Mitglieder geschlossen und kann danach nicht mehr verwendet werden.',
+      ),
+      findsOneWidget,
+    );
+    await tester.tap(find.widgetWithText(FilledButton, 'Kalender auflösen'));
+    await tester.pumpAndSettle();
+
+    expect(family.dissolved, 1);
+    expect(
+      find.widgetWithText(FilledButton, 'Kalender erstellen'),
+      findsOneWidget,
+    );
+    expect(
+      find.text('Der gemeinsame Kalender wurde aufgelöst.'),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('normal member does not see calendar dissolution', (
+    tester,
+  ) async {
+    final (_, family) = await open(tester);
+    family.family = const Family(
+      id: 'family',
+      name: 'Jeske',
+      ownerId: 'different-owner',
+    );
+    await tester.tap(find.text('Aktualisieren'));
+    await tester.pumpAndSettle();
+    expect(find.text('Kalender auflösen'), findsNothing);
+  });
+
+  testWidgets('dissolved calendar loads as no active calendar', (tester) async {
+    final auth = FakeAuth(
+      const AccountIdentity(email: 'test@example.test', emailVerified: true),
+    );
+    final family = FakeFamily()
+      ..family = const Family(
+        id: 'family',
+        name: 'Jeske',
+        ownerId: 'owner',
+        status: FamilyStatus.dissolved,
+      );
+    addTearDown(auth.changes.close);
+    await tester.pumpWidget(
+      MoonkeepApp(auth: auth, family: family, autoOpenCalendar: false),
+    );
+    await tester.pumpAndSettle();
+
+    expect(family.family, isNull);
+    expect(
+      find.widgetWithText(FilledButton, 'Kalender erstellen'),
+      findsOneWidget,
+    );
+    expect(find.text('Jeske'), findsNothing);
   });
 }

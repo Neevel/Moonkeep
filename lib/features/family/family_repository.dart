@@ -1,10 +1,20 @@
 import '../calendar/calendar_repository.dart';
 
+enum FamilyStatus { active, dissolved }
+
 class Family {
-  const Family({required this.id, required this.name, required this.ownerId});
+  const Family({
+    required this.id,
+    required this.name,
+    required this.ownerId,
+    this.status = FamilyStatus.active,
+  });
   final String id;
   final String name;
   final String ownerId;
+  final FamilyStatus status;
+
+  bool get isActive => status == FamilyStatus.active;
 }
 
 class FamilyInvitation {
@@ -41,5 +51,6 @@ abstract interface class FamilyRepository {
   Future<void> revokeInvitation(String code);
   Future<void> leaveFamily(Family family);
   Future<Family> transferOwnership(Family family, String newOwnerId);
+  Future<void> dissolveFamily(Family family);
   CalendarRepository calendar(Family family);
 }

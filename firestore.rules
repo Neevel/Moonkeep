@@ -22,13 +22,24 @@ service cloud.firestore {
     function member(fid) {
       return verified() && get(profile(request.auth.uid)).data.familyId == fid;
     }
+    function activeFamilyData(data) {
+      return data.get('status', 'active') == 'active';
+    }
+    function activeFamily(fid) {
+      return activeFamilyData(get(familyPath(fid)).data);
+    }
+    function activeMember(fid) {
+      return member(fid) && activeFamily(fid);
+    }
     function owner(fid) {
-      return member(fid) && get(familyPath(fid)).data.ownerId == request.auth.uid;
+      return activeMember(fid)
+        && get(familyPath(fid)).data.ownerId == request.auth.uid;
     }
     function validInvitation(code, fid) {
       let before = get(invitePath(code)).data;
       let after = getAfter(invitePath(code)).data;
-      return before.familyId == fid && before.acceptedBy == null
+      return activeFamily(fid)
+        && before.familyId == fid && before.acceptedBy == null
         && before.expiresAt > request.time
         && after.acceptedBy == request.auth.uid && after.acceptedAt == request.time;
     }
@@ -46,15 +57,22 @@ service cloud.firestore {
             && validInvitation(request.resource.data.invitationId, request.resource.data.familyId)));
       allow delete: if verified() && uid == request.auth.uid
         && resource.data.familyId is string
-        && get(familyPath(resource.data.familyId)).data.ownerId != uid
-        && !existsAfter(/databases/$(database)/documents/families/$(resource.data.familyId)/members/$(uid));
+        && ((get(familyPath(resource.data.familyId)).data.ownerId != uid
+            && !existsAfter(/databases/$(database)/documents/families/$(resource.data.familyId)/members/$(uid)))
+          || (get(familyPath(resource.data.familyId)).data.ownerId == uid
+            && activeFamily(resource.data.familyId)
+            && getAfter(familyPath(resource.data.familyId)).data.status == 'dissolved'
+            && getAfter(familyPath(resource.data.familyId)).data
+              .diff(get(familyPath(resource.data.familyId)).data)
+              .affectedKeys().hasOnly(['status'])));
       allow list, update: if false;
     }
     match /families/{fid} {
       function validOwnershipTransfer() {
         let oldOwner = resource.data.ownerId;
         let newOwner = request.resource.data.ownerId;
-        return verified() && oldOwner == request.auth.uid
+        return verified() && activeFamilyData(resource.data)
+          && oldOwner == request.auth.uid
           && newOwner is string && newOwner != oldOwner
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['ownerId'])
           && exists(profile(newOwner))
@@ -65,18 +83,27 @@ service cloud.firestore {
           && getAfter(memberPath(fid, oldOwner)).data.role == 'member'
           && getAfter(memberPath(fid, newOwner)).data.role == 'owner';
       }
+      function validDissolution() {
+        return verified() && activeFamilyData(resource.data)
+          && resource.data.ownerId == request.auth.uid
+          && get(profile(request.auth.uid)).data.familyId == fid
+          && request.resource.data.status == 'dissolved'
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status'])
+          && !existsAfter(profile(request.auth.uid));
+      }
       allow get: if member(fid);
       allow create: if verified()
-        && request.resource.data.keys().hasOnly(['name', 'ownerId', 'timeZone', 'createdAt'])
+        && request.resource.data.keys().hasOnly(['name', 'ownerId', 'status', 'timeZone', 'createdAt'])
         && request.resource.data.name is string
         && request.resource.data.name.size() >= 1 && request.resource.data.name.size() <= 80
         && request.resource.data.ownerId == request.auth.uid
+        && activeFamilyData(request.resource.data)
         && request.resource.data.timeZone == 'Europe/Berlin'
         && request.resource.data.createdAt == request.time
         && !exists(profile(request.auth.uid))
         && getAfter(profile(request.auth.uid)).data.familyId == fid
         && getAfter(profile(request.auth.uid)).data.invitationId == null;
-      allow update: if validOwnershipTransfer();
+      allow update: if validOwnershipTransfer() || validDissolution();
       allow list, delete: if false;
 
       match /members/{memberId} {
@@ -93,7 +120,8 @@ service cloud.firestore {
         function validOwnershipRoleTransfer() {
           let oldOwner = get(familyPath(fid)).data.ownerId;
           let newOwner = getAfter(familyPath(fid)).data.ownerId;
-          return verified() && request.auth.uid == oldOwner
+          return verified() && activeFamily(fid)
+            && request.auth.uid == oldOwner
             && newOwner is string && newOwner != oldOwner
             && memberId in [oldOwner, newOwner]
             && getAfter(familyPath(fid)).data.diff(get(familyPath(fid)).data)
@@ -106,9 +134,10 @@ service cloud.firestore {
             && getAfter(memberPath(fid, oldOwner)).data.role == 'member'
             && getAfter(memberPath(fid, newOwner)).data.role == 'owner';
         }
-        allow read: if member(fid);
+        allow read: if activeMember(fid);
         allow create: if verified()
           && memberId == request.auth.uid
+          && activeFamilyData(getAfter(familyPath(fid)).data)
           && getAfter(profile(request.auth.uid)).data.familyId == fid
           && validMemberProfile();
         allow delete: if verified() && memberId == request.auth.uid
@@ -126,7 +155,7 @@ service cloud.firestore {
         function validEvent(d) {
           return d.keys().hasOnly(['title', 'notes', 'year', 'month', 'day',
             'startMinute', 'endMinute', 'importance', 'reminderMinutesBefore',
-            'revision', 'updatedBy', 'updatedAt'])
+            'recurrence', 'revision', 'updatedBy', 'updatedAt'])
             && d.title is string && d.title.size() >= 1 && d.title.size() <= 120
             && d.notes is string && d.notes.size() <= 2000
             && d.year is int && d.year >= 1900 && d.year <= 2100
@@ -139,15 +168,36 @@ service cloud.firestore {
             && (!d.keys().hasAny(['reminderMinutesBefore'])
               || d.reminderMinutesBefore == null
               || d.reminderMinutesBefore in [0, 10, 30, 60, 1440])
+            && validRecurrence(d)
             && d.revision is int && d.updatedBy == request.auth.uid
             && d.updatedAt == request.time;
         }
-        allow read: if member(fid);
-        allow create: if member(fid) && validEvent(request.resource.data)
+        function validRecurrence(d) {
+          let r = d.get('recurrence', null);
+          return r == null
+            || (r is map
+              && r.keys().hasOnly([
+                'frequency', 'endYear', 'endMonth', 'endDay'])
+              && r.frequency in [
+                'daily', 'weekly', 'biweekly', 'monthly', 'yearly']
+              && ((!r.keys().hasAny(['endYear', 'endMonth', 'endDay']))
+                || (r.keys().hasAll(['endYear', 'endMonth', 'endDay'])
+                  && r.endYear is int
+                  && r.endYear >= 1900 && r.endYear <= 2100
+                  && r.endMonth is int
+                  && r.endMonth >= 1 && r.endMonth <= 12
+                  && r.endDay is int
+                  && r.endDay >= 1
+                  && r.endDay <= daysInMonth(r.endYear, r.endMonth)
+                  && r.endYear * 10000 + r.endMonth * 100 + r.endDay
+                    >= d.year * 10000 + d.month * 100 + d.day)));
+        }
+        allow read: if activeMember(fid);
+        allow create: if activeMember(fid) && validEvent(request.resource.data)
           && request.resource.data.revision == 1;
-        allow update: if member(fid) && validEvent(request.resource.data)
+        allow update: if activeMember(fid) && validEvent(request.resource.data)
           && request.resource.data.revision == resource.data.revision + 1;
-        allow delete: if member(fid);
+        allow delete: if activeMember(fid);
       }
 
       match /activity/{activityId} {
@@ -170,14 +220,15 @@ service cloud.firestore {
                 && !existsAfter(path)
                 && get(path).data.title == d.title));
         }
-        allow read: if member(fid);
-        allow create: if member(fid) && validActivity();
+        allow read: if activeMember(fid);
+        allow create: if activeMember(fid) && validActivity();
         allow update, delete: if false;
       }
     }
     match /invitations/{code} {
       // A random 128-bit code is a bearer invitation, never a short guessable PIN.
-      allow get: if verified() && code.matches('^[a-f0-9]{32}$');
+      allow get: if verified() && code.matches('^[a-f0-9]{32}$')
+        && activeFamily(resource.data.familyId);
       allow list: if owner(resource.data.familyId);
       allow create: if code.matches('^[a-f0-9]{32}$')
         && owner(request.resource.data.familyId)
@@ -187,7 +238,8 @@ service cloud.firestore {
         && request.resource.data.expiresAt > request.time
         && request.resource.data.expiresAt <= request.time + duration.value(7, 'd')
         && request.resource.data.acceptedBy == null && request.resource.data.acceptedAt == null;
-      allow update: if verified() && resource.data.acceptedBy == null
+      allow update: if verified() && activeFamily(resource.data.familyId)
+        && resource.data.acceptedBy == null
         && resource.data.expiresAt > request.time
         && !exists(profile(request.auth.uid))
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['acceptedBy', 'acceptedAt'])

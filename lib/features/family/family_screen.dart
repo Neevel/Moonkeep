@@ -241,6 +241,46 @@ class _FamilyScreenState extends State<FamilyScreen> {
     }, success: 'Der Besitz wurde übertragen.');
   }
 
+  Future<void> _dissolveFamily() async {
+    final family = _family!;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Kalender endgültig auflösen?'),
+        content: const Text(
+          'Der gemeinsame Kalender wird für alle Mitglieder geschlossen und '
+          'kann danach nicht mehr verwendet werden.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Abbrechen'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(context).colorScheme.error,
+              foregroundColor: Theme.of(context).colorScheme.onError,
+            ),
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Kalender auflösen'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    await _run(() async {
+      await widget.repository!.dissolveFamily(family);
+      if (mounted) {
+        setState(() {
+          _family = null;
+          _members = [];
+          _invitations = [];
+          _calendarOpened = false;
+        });
+      }
+    }, success: 'Der gemeinsame Kalender wurde aufgelöst.');
+  }
+
   @override
   Widget build(BuildContext context) => Scaffold(
     appBar: AppBar(
@@ -491,7 +531,7 @@ class _FamilyScreenState extends State<FamilyScreen> {
         ),
     ],
     const SizedBox(height: 28),
-    if (widget.repository!.canInvite(_family!))
+    if (widget.repository!.canInvite(_family!)) ...[
       const Card(
         child: ListTile(
           leading: Icon(Icons.shield_outlined),
@@ -501,8 +541,17 @@ class _FamilyScreenState extends State<FamilyScreen> {
             'übertragen.',
           ),
         ),
-      )
-    else
+      ),
+      const SizedBox(height: 16),
+      OutlinedButton.icon(
+        style: OutlinedButton.styleFrom(
+          foregroundColor: Theme.of(context).colorScheme.error,
+        ),
+        onPressed: _busy ? null : _dissolveFamily,
+        icon: const Icon(Icons.delete_forever_outlined),
+        label: const Text('Kalender auflösen'),
+      ),
+    ] else
       OutlinedButton.icon(
         onPressed: _busy ? null : _leave,
         icon: const Icon(Icons.logout),

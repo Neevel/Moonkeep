@@ -56,6 +56,9 @@ class FirestoreFamilyRepository implements FamilyRepository {
     id: id,
     name: data['name'] as String,
     ownerId: data['ownerId'] as String,
+    status: data['status'] == null || data['status'] == 'active'
+        ? FamilyStatus.active
+        : FamilyStatus.dissolved,
   );
 
   @override
@@ -75,8 +78,33 @@ class FirestoreFamilyRepository implements FamilyRepository {
       throw const FamilyFailure('Die Familie konnte nicht gefunden werden.');
     }
     final family = _family(id, result.data()!);
+    if (!family.isActive) {
+      await _clearDissolvedMembership(family, uid);
+      return null;
+    }
     await _ensureMemberProfile(family, uid);
     return family;
+  }
+
+  Future<void> _clearDissolvedMembership(Family family, String uid) async {
+    await db.runTransaction((tx) async {
+      _checkSession(uid);
+      final familyRef = db.doc('families/${family.id}');
+      final membershipRef = db.doc('memberships/$uid');
+      final profileRef = familyRef.collection('members').doc(uid);
+      final currentFamily = await tx.get(familyRef);
+      final membership = await tx.get(membershipRef);
+      if (!membership.exists) return;
+      if (membership.data()?['familyId'] != family.id ||
+          currentFamily.data()?['status'] != 'dissolved') {
+        throw const FamilyFailure(
+          'Die Familienmitgliedschaft wurde bereits geändert.',
+        );
+      }
+      tx.delete(profileRef);
+      tx.delete(membershipRef);
+    });
+    _checkSession(uid);
   }
 
   Future<void> _ensureMemberProfile(Family family, String uid) async {
@@ -124,6 +152,7 @@ class FirestoreFamilyRepository implements FamilyRepository {
       tx.set(ref, {
         'name': name,
         'ownerId': uid,
+        'status': 'active',
         'timeZone': 'Europe/Berlin',
         'createdAt': FieldValue.serverTimestamp(),
       });
@@ -322,7 +351,9 @@ class FirestoreFamilyRepository implements FamilyRepository {
       final newOwner = await tx.get(newOwnerRef);
       final newOwnerMembership = await tx.get(newOwnerMembershipRef);
       final data = currentFamily.data();
-      if (data == null || data['ownerId'] != uid) {
+      if (data == null ||
+          data['ownerId'] != uid ||
+          data['status'] == 'dissolved') {
         throw const FamilyFailure(
           'Der Besitz wurde bereits geändert. Bitte aktualisiere die Ansicht.',
         );
@@ -349,6 +380,36 @@ class FirestoreFamilyRepository implements FamilyRepository {
     });
     _checkSession(uid);
     return result;
+  }
+
+  @override
+  Future<void> dissolveFamily(Family family) async {
+    final uid = _uid();
+    if (family.ownerId != uid || !family.isActive) {
+      throw const FamilyFailure(
+        'Nur der aktuelle Besitzer kann diesen Kalender auflösen.',
+      );
+    }
+    final familyRef = db.doc('families/${family.id}');
+    final membershipRef = db.doc('memberships/$uid');
+    await db.runTransaction((tx) async {
+      _checkSession(uid);
+      final currentFamily = await tx.get(familyRef);
+      final membership = await tx.get(membershipRef);
+      final data = currentFamily.data();
+      if (data == null ||
+          data['ownerId'] != uid ||
+          data['status'] == 'dissolved' ||
+          !membership.exists ||
+          membership.data()?['familyId'] != family.id) {
+        throw const FamilyFailure(
+          'Der Kalender wurde bereits aufgelöst oder der Besitz wurde geändert.',
+        );
+      }
+      tx.update(familyRef, {'status': 'dissolved'});
+      tx.delete(membershipRef);
+    });
+    _checkSession(uid);
   }
 
   @override
