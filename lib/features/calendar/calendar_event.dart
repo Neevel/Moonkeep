@@ -29,6 +29,7 @@ class CalendarEvent {
     this.revision = 0,
     this.importance = EventImportance.normal,
     this.reminderMinutesBefore,
+    this.isAllDay = false,
     this.recurrence = EventRecurrence.none,
     this.recurrenceEnd,
   }) : title = title.trim(),
@@ -39,6 +40,11 @@ class CalendarEvent {
     if (!end.isAfter(start) || !isSameDay(start, end)) {
       throw ArgumentError(
         'Das Ende muss am selben Tag nach dem Beginn liegen.',
+      );
+    }
+    if (isAllDay && reminderMinutesBefore != null) {
+      throw ArgumentError(
+        'Ganztägige Termine unterstützen derzeit keine Erinnerungen.',
       );
     }
     if (recurrence == EventRecurrence.none && recurrenceEnd != null) {
@@ -61,6 +67,7 @@ class CalendarEvent {
   final int revision;
   final EventImportance importance;
   final int? reminderMinutesBefore;
+  final bool isAllDay;
   final EventRecurrence recurrence;
   final DateTime? recurrenceEnd;
 
@@ -89,6 +96,7 @@ class CalendarEvent {
     'notes': notes,
     'importance': importance.name,
     'reminderMinutesBefore': reminderMinutesBefore,
+    'isAllDay': isAllDay,
     'recurrence': recurrence.name,
     'recurrenceEnd': recurrenceEnd?.toIso8601String(),
   };
@@ -110,6 +118,7 @@ class CalendarEvent {
         orElse: () => EventImportance.normal,
       ),
       reminderMinutesBefore: json['reminderMinutesBefore'] as int?,
+      isAllDay: json['isAllDay'] as bool? ?? false,
       recurrence: recurrence,
       recurrenceEnd: recurrence == EventRecurrence.none || recurrenceEnd == null
           ? null

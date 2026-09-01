@@ -155,7 +155,7 @@ service cloud.firestore {
         function validEvent(d) {
           return d.keys().hasOnly(['title', 'notes', 'year', 'month', 'day',
             'startMinute', 'endMinute', 'importance', 'reminderMinutesBefore',
-            'recurrence', 'revision', 'updatedBy', 'updatedAt'])
+            'allDay', 'recurrence', 'revision', 'updatedBy', 'updatedAt'])
             && d.title is string && d.title.size() >= 1 && d.title.size() <= 120
             && d.notes is string && d.notes.size() <= 2000
             && d.year is int && d.year >= 1900 && d.year <= 2100
@@ -168,6 +168,9 @@ service cloud.firestore {
             && (!d.keys().hasAny(['reminderMinutesBefore'])
               || d.reminderMinutesBefore == null
               || d.reminderMinutesBefore in [0, 10, 30, 60, 1440])
+            && d.get('allDay', false) is bool
+            && (!d.get('allDay', false)
+              || d.get('reminderMinutesBefore', null) == null)
             && validRecurrence(d)
             && d.revision is int && d.updatedBy == request.auth.uid
             && d.updatedAt == request.time;

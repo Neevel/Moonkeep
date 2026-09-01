@@ -24,6 +24,22 @@ void main() {
     expect(restored.revision, 5);
     expect(restored.recurrence, EventRecurrence.yearly);
     expect(restored.recurrenceEnd, DateTime.utc(2032, 2, 29));
+    expect(restored.isAllDay, isFalse);
+  });
+
+  test('shared all-day event round-trips without a reminder', () {
+    final original = CalendarEvent(
+      id: 'birthday',
+      title: 'Geburtstag',
+      start: DateTime.utc(2028, 2, 29, 9),
+      end: DateTime.utc(2028, 2, 29, 10),
+      isAllDay: true,
+      recurrence: EventRecurrence.yearly,
+    );
+    final data = sharedEventData(original);
+    expect(data['allDay'], isTrue);
+    expect(data['reminderMinutesBefore'], isNull);
+    expect(sharedEvent('birthday', {...data, 'revision': 1}).isAllDay, isTrue);
   });
 
   test('shared event parser rejects impossible dates and intervals', () {
@@ -50,6 +66,19 @@ void main() {
       throwsFormatException,
     );
     expect(sharedEvent('one', valid).recurrence, EventRecurrence.none);
+    expect(sharedEvent('one', valid).isAllDay, isFalse);
+    expect(
+      () => sharedEvent('one', {...valid, 'allDay': 'yes'}),
+      throwsFormatException,
+    );
+    expect(
+      () => sharedEvent('one', {
+        ...valid,
+        'allDay': true,
+        'reminderMinutesBefore': 30,
+      }),
+      throwsFormatException,
+    );
     expect(
       () => sharedEvent('one', {
         ...valid,

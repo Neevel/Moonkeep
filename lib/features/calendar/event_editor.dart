@@ -28,6 +28,7 @@ class _EventEditorState extends State<EventEditor> {
   late TimeOfDay _end;
   late EventImportance _importance;
   late int? _reminderMinutesBefore;
+  late bool _isAllDay;
   late EventRecurrence _recurrence;
   late DateTime? _recurrenceEnd;
   bool _busy = false;
@@ -48,6 +49,7 @@ class _EventEditorState extends State<EventEditor> {
         : TimeOfDay.fromDateTime(event.end);
     _importance = event?.importance ?? EventImportance.normal;
     _reminderMinutesBefore = event?.reminderMinutesBefore;
+    _isAllDay = event?.isAllDay ?? false;
     _recurrence = event?.recurrence ?? EventRecurrence.none;
     _recurrenceEnd = event?.recurrenceEnd;
   }
@@ -114,7 +116,7 @@ class _EventEditorState extends State<EventEditor> {
 
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
-    if (!_at(_end).isAfter(_at(_start))) {
+    if (!_isAllDay && !_at(_end).isAfter(_at(_start))) {
       setState(() => _error = 'Das Ende muss nach dem Beginn liegen.');
       return;
     }
@@ -132,15 +134,22 @@ class _EventEditorState extends State<EventEditor> {
       _error = null;
     });
     try {
+      var start = _at(_start);
+      var end = _at(_end);
+      if (_isAllDay && !end.isAfter(start)) {
+        start = _at(const TimeOfDay(hour: 9, minute: 0));
+        end = _at(const TimeOfDay(hour: 10, minute: 0));
+      }
       final event = CalendarEvent(
         id: widget.event?.id ?? widget.store.newId(),
         title: _title.text,
-        start: _at(_start),
-        end: _at(_end),
+        start: start,
+        end: end,
         notes: _notes.text,
         revision: widget.event?.revision ?? 0,
         importance: _importance,
-        reminderMinutesBefore: _reminderMinutesBefore,
+        reminderMinutesBefore: _isAllDay ? null : _reminderMinutesBefore,
+        isAllDay: _isAllDay,
         recurrence: _recurrence,
         recurrenceEnd: _recurrence == EventRecurrence.none
             ? null
@@ -152,9 +161,7 @@ class _EventEditorState extends State<EventEditor> {
       if (mounted) {
         setState(() {
           _busy = false;
-          _error = error is CalendarFailure
-              ? error.message
-              : 'Speichern fehlgeschlagen. Bitte erneut versuchen.';
+          _error = error is CalendarFailure ? error.message : 'Termin konnte nicht gespeichert werden. Bitte erneut versuchen.';
         });
       }
     }
@@ -215,20 +222,29 @@ class _EventEditorState extends State<EventEditor> {
                   ),
                 ),
                 const SizedBox(height: 16),
-                Wrap(
-                  spacing: 16,
-                  runSpacing: 12,
-                  children: [
-                    OutlinedButton(
-                      onPressed: _busy ? null : () => _chooseTime(true),
-                      child: Text('Beginn: ${_start.format(context)}'),
-                    ),
-                    OutlinedButton(
-                      onPressed: _busy ? null : () => _chooseTime(false),
-                      child: Text('Ende: ${_end.format(context)}'),
-                    ),
-                  ],
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('Ganztägig'),
+                  value: _isAllDay,
+                  onChanged: _busy
+                      ? null
+                      : (value) => setState(() => _isAllDay = value),
                 ),
+                if (!_isAllDay)
+                  Wrap(
+                    spacing: 16,
+                    runSpacing: 12,
+                    children: [
+                      OutlinedButton(
+                        onPressed: _busy ? null : () => _chooseTime(true),
+                        child: Text('Beginn: ${_start.format(context)}'),
+                      ),
+                      OutlinedButton(
+                        onPressed: _busy ? null : () => _chooseTime(false),
+                        child: Text('Ende: ${_end.format(context)}'),
+                      ),
+                    ],
+                  ),
                 const SizedBox(height: 24),
                 DropdownButtonFormField<EventImportance>(
                   isExpanded: true,
@@ -251,32 +267,42 @@ class _EventEditorState extends State<EventEditor> {
                         ),
                 ),
                 const SizedBox(height: 16),
-                DropdownButtonFormField<int?>(
-                  isExpanded: true,
-                  initialValue: _reminderMinutesBefore,
-                  decoration: const InputDecoration(
-                    labelText: 'Erinnerung',
-                    prefixIcon: Icon(Icons.notifications_outlined),
+                if (!_isAllDay)
+                  DropdownButtonFormField<int?>(
+                    isExpanded: true,
+                    initialValue: _reminderMinutesBefore,
+                    decoration: const InputDecoration(
+                      labelText: 'Erinnerung',
+                      prefixIcon: Icon(Icons.notifications_outlined),
+                    ),
+                    items: const [
+                      DropdownMenuItem(value: null, child: Text('Keine')),
+                      DropdownMenuItem(
+                        value: 0,
+                        child: Text('Zum Terminbeginn'),
+                      ),
+                      DropdownMenuItem(
+                        value: 10,
+                        child: Text('10 Minuten vorher'),
+                      ),
+                      DropdownMenuItem(
+                        value: 30,
+                        child: Text('30 Minuten vorher'),
+                      ),
+                      DropdownMenuItem(
+                        value: 60,
+                        child: Text('1 Stunde vorher'),
+                      ),
+                      DropdownMenuItem(
+                        value: 1440,
+                        child: Text('1 Tag vorher'),
+                      ),
+                    ],
+                    onChanged: _busy
+                        ? null
+                        : (value) =>
+                              setState(() => _reminderMinutesBefore = value),
                   ),
-                  items: const [
-                    DropdownMenuItem(value: null, child: Text('Keine')),
-                    DropdownMenuItem(value: 0, child: Text('Zum Terminbeginn')),
-                    DropdownMenuItem(
-                      value: 10,
-                      child: Text('10 Minuten vorher'),
-                    ),
-                    DropdownMenuItem(
-                      value: 30,
-                      child: Text('30 Minuten vorher'),
-                    ),
-                    DropdownMenuItem(value: 60, child: Text('1 Stunde vorher')),
-                    DropdownMenuItem(value: 1440, child: Text('1 Tag vorher')),
-                  ],
-                  onChanged: _busy
-                      ? null
-                      : (value) =>
-                            setState(() => _reminderMinutesBefore = value),
-                ),
                 const SizedBox(height: 24),
                 Text(
                   'Wiederholen',

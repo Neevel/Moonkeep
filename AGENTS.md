@@ -34,19 +34,6 @@
 - Bei Fehlern zuerst nach Exception, Stacktrace oder betroffener Komponente filtern.
 - Lange Build-, Firebase- oder Testausgaben nur bei einem konkreten Fehler näher untersuchen.
 
-## Emulator und visuelle Prüfung
-
-- Den Emulator nicht routinemäßig selbst visuell untersuchen.
-- Keine Screenshots oder vollständigen UI-Hierarchien aufnehmen, sofern dies für die Fehleranalyse nicht notwendig ist.
-- Für normale visuelle Prüfungen den Nutzer als Tester verwenden.
-- Dem Nutzer konkret sagen:
-  - welchen Screen er öffnen soll,
-  - welche Aktion er durchführen soll,
-  - welche sichtbaren Ergebnisse geprüft werden sollen.
-- Die vom Nutzer beschriebenen Beobachtungen als Testergebnis verwenden.
-- Screenshots nur anfordern oder selbst analysieren, wenn eine Beschreibung nicht ausreicht oder ein visueller Fehler untersucht werden muss.
-- Mehrere notwendige Emulator-Aktionen möglichst bündeln statt jeden einzelnen Schritt separat auszuwerten.
-
 ## Tests
 
 - Während eines Tasks nur gezielte, betroffene Tests ausführen.

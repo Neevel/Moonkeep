@@ -82,9 +82,14 @@ class _FamilyScreenState extends State<FamilyScreen> {
       await action();
       if (!mounted) return;
       setState(() {
-        _message = success;
+        _message = null;
         _isError = false;
       });
+      if (success != null) {
+        ScaffoldMessenger.of(context)
+          ..removeCurrentSnackBar()
+          ..showSnackBar(SnackBar(content: Text(success)));
+      }
     } catch (error) {
       if (!mounted) return;
       setState(() {
@@ -96,25 +101,21 @@ class _FamilyScreenState extends State<FamilyScreen> {
     }
   }
 
-  void _create() => _run(
-    () async {
-      final name = _selectedTemplate == 'Sonstiges'
-          ? _name.text
-          : _selectedTemplate;
-      final family = await widget.repository!.createFamily(name);
-      final members = await widget.repository!.members(family);
-      if (mounted) {
-        setState(() {
-          _family = family;
-          _members = members;
-          _name.clear();
-        });
-        _scheduleCalendarOpen();
-      }
-    },
-    success:
-        'Kalender erstellt. Du kannst jetzt einen Einladungscode erzeugen.',
-  );
+  void _create() => _run(() async {
+    final name = _selectedTemplate == 'Sonstiges'
+        ? _name.text
+        : _selectedTemplate;
+    final family = await widget.repository!.createFamily(name);
+    final members = await widget.repository!.members(family);
+    if (mounted) {
+      setState(() {
+        _family = family;
+        _members = members;
+        _name.clear();
+      });
+      _scheduleCalendarOpen();
+    }
+  }, success: 'Kalender erstellt.');
 
   void _join() => _run(() async {
     final family = await widget.repository!.joinFamily(_code.text);
@@ -127,7 +128,7 @@ class _FamilyScreenState extends State<FamilyScreen> {
       });
       _scheduleCalendarOpen();
     }
-  }, success: 'Du bist dem Kalender beigetreten.');
+  }, success: 'Kalender beigetreten.');
 
   void _scheduleCalendarOpen() {
     if (!widget.autoOpenCalendar || _calendarOpened || _family == null) return;
@@ -153,7 +154,7 @@ class _FamilyScreenState extends State<FamilyScreen> {
   void _invite() => _run(() async {
     final invitation = await widget.repository!.invite(_family!);
     if (mounted) setState(() => _invitations = [invitation]);
-  }, success: 'Einmaligen Einladungscode erstellt.');
+  }, success: 'Einladung erstellt.');
 
   Future<void> _revoke(FamilyInvitation invitation) async {
     await _run(() async {
@@ -200,7 +201,7 @@ class _FamilyScreenState extends State<FamilyScreen> {
           _calendarOpened = false;
         });
       }
-    }, success: 'Du hast den Kalender verlassen.');
+    }, success: 'Kalender verlassen.');
   }
 
   Future<void> _transferOwnership(FamilyMember member) async {
@@ -238,7 +239,7 @@ class _FamilyScreenState extends State<FamilyScreen> {
           _invitations = [];
         });
       }
-    }, success: 'Der Besitz wurde übertragen.');
+    }, success: 'Besitz übertragen.');
   }
 
   Future<void> _dissolveFamily() async {
@@ -278,7 +279,7 @@ class _FamilyScreenState extends State<FamilyScreen> {
           _calendarOpened = false;
         });
       }
-    }, success: 'Der gemeinsame Kalender wurde aufgelöst.');
+    }, success: 'Kalender aufgelöst.');
   }
 
   @override

@@ -9,13 +9,13 @@ String familyError(Object error) {
   if (error is FamilyFailure) return error.message;
   if (error is FirebaseException) {
     return switch (error.code) {
-      'permission-denied' => 'Kein Zugriff. Bitte bestätige deine E-Mail und aktualisiere den Kontostatus. Falls das erledigt ist, müssen die Firestore-Regeln eingerichtet werden.',
+      'permission-denied' => 'Du hast dafür keine Berechtigung. Bitte prüfe, ob deine E-Mail-Adresse bestätigt ist.',
       'unavailable' || 'deadline-exceeded' => 'Keine Serververbindung. Bitte prüfe das Internet und versuche es erneut.',
-      'failed-precondition' || 'not-found' => 'Die Familiendatenbank ist noch nicht bereit. Bitte die Firestore-Einrichtung prüfen.',
-      _ => 'Die Familienanfrage ist fehlgeschlagen. Bitte erneut versuchen.',
+      'failed-precondition' || 'not-found' => 'Die Kalenderdaten sind momentan nicht verfügbar. Bitte versuche es erneut.',
+      _ => 'Die Kalenderaktion ist fehlgeschlagen. Bitte versuche es erneut.',
     };
   }
-  return 'Die Familienanfrage ist fehlgeschlagen. Bitte erneut versuchen.';
+  return 'Die Kalenderaktion ist fehlgeschlagen. Bitte versuche es erneut.';
 }
 
 class FirestoreFamilyRepository implements FamilyRepository {
@@ -252,9 +252,9 @@ class FirestoreFamilyRepository implements FamilyRepository {
     await db.runTransaction((tx) async {
       _checkSession(uid);
       final ref = db.doc('invitations/$code');
-      if ((await tx.get(ref)).exists) {
-        throw const FamilyFailure('Bitte einen neuen Code erzeugen.');
-      }
+      // Missing bearer-code documents are intentionally unreadable. Write the
+      // random code directly; a collision becomes an update and is denied by
+      // the existing invitation rules.
       tx.set(ref, {
         'familyId': family.id,
         'createdAt': FieldValue.serverTimestamp(),

@@ -65,8 +65,38 @@ void main() {
       'reminderMinutesBefore': null,
     });
     expect(restored.recurrence, EventRecurrence.none);
+    expect(restored.isAllDay, isFalse);
     expect(restored.occursOn(DateTime(2026, 8, 28)), isTrue);
     expect(restored.occursOn(DateTime(2026, 8, 29)), isFalse);
+  });
+
+  test('all-day events round-trip and work with recurrence', () {
+    final original = CalendarEvent(
+      id: 'birthday',
+      title: 'Geburtstag',
+      start: DateTime(2026, 9, 1, 9),
+      end: DateTime(2026, 9, 1, 10),
+      isAllDay: true,
+      recurrence: EventRecurrence.yearly,
+      recurrenceEnd: DateTime(2030, 9, 1),
+    );
+    final restored = CalendarEvent.fromJson(
+      jsonDecode(jsonEncode(original.toJson())) as Map<String, dynamic>,
+    );
+    expect(restored.isAllDay, isTrue);
+    expect(restored.occursOn(DateTime(2029, 9, 1)), isTrue);
+    expect(restored.occursOn(DateTime(2029, 9, 2)), isFalse);
+    expect(
+      () => CalendarEvent(
+        id: 'invalid',
+        title: 'Ungültig',
+        start: DateTime(2026, 9, 1, 9),
+        end: DateTime(2026, 9, 1, 10),
+        isAllDay: true,
+        reminderMinutesBefore: 30,
+      ),
+      throwsArgumentError,
+    );
   });
 
   test(

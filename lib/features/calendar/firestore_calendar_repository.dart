@@ -17,6 +17,7 @@ Map<String, Object?> sharedEventData(CalendarEvent event) => {
   'endMinute': event.end.hour * 60 + event.end.minute,
   'importance': event.importance.name,
   'reminderMinutesBefore': event.reminderMinutesBefore,
+  if (event.isAllDay) 'allDay': true,
   if (event.recurrence != EventRecurrence.none)
     'recurrence': {
       'frequency': event.recurrence.name,
@@ -39,6 +40,7 @@ CalendarEvent sharedEvent(String id, Map<String, dynamic> data) {
     orElse: () => EventImportance.normal,
   );
   final reminder = data['reminderMinutesBefore'];
+  final allDay = data['allDay'];
   final recurrenceData = data['recurrence'];
   var recurrence = EventRecurrence.none;
   DateTime? recurrenceEnd;
@@ -53,6 +55,8 @@ CalendarEvent sharedEvent(String id, Map<String, dynamic> data) {
       end <= start ||
       (reminder != null &&
           (reminder is! int || ![0, 10, 30, 60, 1440].contains(reminder))) ||
+      (allDay != null && allDay is! bool) ||
+      (allDay == true && reminder != null) ||
       (data['revision'] as int) < 1) {
     throw const FormatException('Ungültiger gemeinsamer Termin.');
   }
@@ -99,6 +103,7 @@ CalendarEvent sharedEvent(String id, Map<String, dynamic> data) {
     revision: data['revision'] as int,
     importance: importance,
     reminderMinutesBefore: reminder as int?,
+    isAllDay: allDay == true,
     recurrence: recurrence,
     recurrenceEnd: recurrenceEnd,
   );

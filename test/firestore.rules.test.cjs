@@ -91,6 +91,7 @@ test('owner can inspect only memberships belonging to the owned family', async (
 });
 
 test('only the owner manages invitations and strangers cannot enumerate', async () => {
+  await assertFails(getDoc(doc(db('alice'), 'invitations', code)));
   await invite();
   await assertSucceeds(getDocs(query(collection(db('alice'), 'invitations'), where('familyId', '==', 'alpha'))));
   await assertSucceeds(getDoc(doc(db('bob'), 'invitations', code)));
@@ -379,6 +380,30 @@ test('recurring event fields are validated without breaking old events', async (
       frequency: 'daily', endYear: 2026, endMonth: 8, endDay: 28,
     },
   }));
+});
+
+test('all-day event field is optional, boolean, and disables reminders', async () => {
+  const client = db('alice');
+  await assertSucceeds(setDoc(
+    doc(client, 'families/alpha/events/old-timed'),
+    event(),
+  ));
+  await assertSucceeds(setDoc(
+    doc(client, 'families/alpha/events/all-day'),
+    {...event(), allDay: true},
+  ));
+  await assertSucceeds(setDoc(
+    doc(client, 'families/alpha/events/explicit-timed'),
+    {...event(), allDay: false, reminderMinutesBefore: 30},
+  ));
+  await assertFails(setDoc(
+    doc(client, 'families/alpha/events/bad-all-day'),
+    {...event(), allDay: 'yes'},
+  ));
+  await assertFails(setDoc(
+    doc(client, 'families/alpha/events/all-day-reminder'),
+    {...event(), allDay: true, reminderMinutesBefore: 30},
+  ));
 });
 
 test('creation and deletion activity is atomic, private, and authentic', async () => {

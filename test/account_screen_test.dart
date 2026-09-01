@@ -135,10 +135,12 @@ void main() {
     await tester.pumpAndSettle();
     expect(auth.lastEmail, 'test@example.test');
     expect(find.text('Angemeldet'), findsOneWidget);
+    expect(find.text('Du bist jetzt angemeldet.'), findsOneWidget);
     expect(find.textContaining('gemeinsamen Kalender'), findsOneWidget);
     await tester.tap(find.text('Abmelden'));
     await tester.pumpAndSettle();
     expect(button('Anmelden'), findsOneWidget);
+    expect(find.text('Du bist jetzt abgemeldet.'), findsOneWidget);
     expect(
       tester
           .widget<TextFormField>(find.widgetWithText(TextFormField, 'Passwort'))
@@ -174,9 +176,16 @@ void main() {
       await tester.tap(button('Registrieren'));
       await tester.pumpAndSettle();
       expect(auth.registerCalls, 1);
+      expect(
+        find.text(
+          'Konto erstellt. Bitte bestätige als Nächstes deine E-Mail-Adresse.',
+        ),
+        findsOneWidget,
+      );
       await tester.tap(find.text('Bestätigungsmail senden'));
       await tester.pumpAndSettle();
       expect(auth.verificationCalls, 1);
+      expect(find.textContaining('Bestätigungsmail gesendet.'), findsOneWidget);
       await tester.tap(find.text('Status aktualisieren'));
       await tester.pumpAndSettle();
       expect(find.text('E-Mail-Adresse bestätigt'), findsOneWidget);

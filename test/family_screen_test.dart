@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:moonkeep/app.dart';
@@ -7,6 +8,7 @@ import 'package:moonkeep/features/account/auth_repository.dart';
 import 'package:moonkeep/features/calendar/calendar_repository.dart';
 import 'package:moonkeep/features/calendar/calendar_store.dart';
 import 'package:moonkeep/features/family/family_repository.dart';
+import 'package:moonkeep/features/family/firestore_family_repository.dart';
 
 class FakeAuth implements AuthRepository {
   FakeAuth(this.user);
@@ -44,6 +46,8 @@ class FakeFamily implements FamilyRepository {
       transferred = 0,
       dissolved = 0;
   FamilyFailure? transferFailure;
+  FamilyFailure? joinFailure;
+  Completer<void>? pendingJoin;
   @override
   bool canInvite(Family value) => value.ownerId == 'owner';
   @override
@@ -65,6 +69,8 @@ class FakeFamily implements FamilyRepository {
   @override
   Future<Family> joinFamily(String code) async {
     joined++;
+    if (joinFailure != null) throw joinFailure!;
+    await pendingJoin?.future;
     family = const Family(id: 'family', name: 'Jeske', ownerId: 'owner');
     return family!;
   }
@@ -134,6 +140,25 @@ class FakeSharedCalendar extends CalendarStore {
 }
 
 void main() {
+  test('maps Firebase failures to short user-facing calendar messages', () {
+    expect(
+      familyError(
+        FirebaseException(plugin: 'firestore', code: 'permission-denied'),
+      ),
+      'Du hast dafür keine Berechtigung. Bitte prüfe, ob deine E-Mail-Adresse bestätigt ist.',
+    );
+    expect(
+      familyError(FirebaseException(plugin: 'firestore', code: 'unavailable')),
+      'Keine Serververbindung. Bitte prüfe das Internet und versuche es erneut.',
+    );
+    expect(
+      familyError(
+        FirebaseException(plugin: 'firestore', code: 'failed-precondition'),
+      ),
+      'Die Kalenderdaten sind momentan nicht verfügbar. Bitte versuche es erneut.',
+    );
+  });
+
   Future<(FakeAuth, FakeFamily)> open(
     WidgetTester tester, {
     bool verified = true,
@@ -185,14 +210,17 @@ void main() {
     await tester.pumpAndSettle();
     expect(family.created, 1);
     expect(find.text('Jeske'), findsOneWidget);
+    expect(find.text('Kalender erstellt.'), findsOneWidget);
     await tester.tap(find.text('Einladungscode erzeugen'));
     await tester.pumpAndSettle();
     expect(family.invited, 1);
     expect(find.text('a' * 32), findsOneWidget);
+    expect(find.text('Einladung erstellt.'), findsOneWidget);
     await tester.tap(find.text('Widerrufen'));
     await tester.pumpAndSettle();
     expect(family.revoked, 1);
     expect(find.text('a' * 32), findsNothing);
+    expect(find.text('Einladung widerrufen.'), findsOneWidget);
   });
 
   testWidgets('existing membership opens the shared calendar on app start', (
@@ -224,9 +252,50 @@ void main() {
     await tester.pumpAndSettle();
     expect(family.joined, 1);
     expect(find.text('Jeske'), findsOneWidget);
+    expect(find.text('Kalender beigetreten.'), findsOneWidget);
     await tester.tap(find.text('Gemeinsamen Kalender öffnen'));
     await tester.pumpAndSettle();
     expect(find.textContaining('Lokaler Kalender'), findsNothing);
+  });
+
+  testWidgets('invalid invitation stays understandable and join is retryable', (
+    tester,
+  ) async {
+    final (_, family) = await open(tester);
+    family.joinFailure = const FamilyFailure(
+      'Dieser Einladungscode ist ungültig, abgelaufen oder bereits verwendet.',
+    );
+    await tester.enterText(
+      find.widgetWithText(TextField, 'Einladungscode'),
+      'a' * 32,
+    );
+    await tester.tap(find.text('Mit Code beitreten'));
+    await tester.pumpAndSettle();
+    expect(
+      find.text(
+        'Dieser Einladungscode ist ungültig, abgelaufen oder bereits verwendet.',
+      ),
+      findsOneWidget,
+    );
+    expect(find.text('Mit Code beitreten'), findsOneWidget);
+  });
+
+  testWidgets('pending join disables duplicate submissions', (tester) async {
+    final (_, family) = await open(tester);
+    family.pendingJoin = Completer<void>();
+    await tester.enterText(
+      find.widgetWithText(TextField, 'Einladungscode'),
+      'a' * 32,
+    );
+    final joinButton = find.widgetWithText(FilledButton, 'Mit Code beitreten');
+    await tester.tap(joinButton);
+    await tester.pump();
+    expect(joinButton, findsNothing);
+    expect(find.byType(LinearProgressIndicator), findsOneWidget);
+    expect(family.joined, 1);
+    family.pendingJoin!.complete();
+    await tester.pumpAndSettle();
+    expect(find.text('Kalender beigetreten.'), findsOneWidget);
   });
 
   testWidgets('shows family members and their roles', (tester) async {
@@ -285,7 +354,7 @@ void main() {
       find.descendant(of: oldOwnerTile, matching: find.text('Mitglied')),
       findsOneWidget,
     );
-    expect(find.text('Der Besitz wurde übertragen.'), findsOneWidget);
+    expect(find.text('Besitz übertragen.'), findsOneWidget);
     expect(find.text('Einladungscode erzeugen'), findsNothing);
     expect(find.byIcon(Icons.manage_accounts_outlined), findsNothing);
   });
@@ -349,7 +418,7 @@ void main() {
       find.widgetWithText(FilledButton, 'Kalender erstellen'),
       findsOneWidget,
     );
-    expect(find.text('Du hast den Kalender verlassen.'), findsOneWidget);
+    expect(find.text('Kalender verlassen.'), findsOneWidget);
   });
 
   testWidgets('only owner sees dissolution and returns to calendar setup', (
@@ -378,10 +447,7 @@ void main() {
       find.widgetWithText(FilledButton, 'Kalender erstellen'),
       findsOneWidget,
     );
-    expect(
-      find.text('Der gemeinsame Kalender wurde aufgelöst.'),
-      findsOneWidget,
-    );
+    expect(find.text('Kalender aufgelöst.'), findsOneWidget);
   });
 
   testWidgets('normal member does not see calendar dissolution', (

@@ -62,6 +62,7 @@ class LocalReminderService implements ReminderService {
   @override
   Future<void> schedule(CalendarEvent event, {required bool shared}) async {
     await cancel(event.id);
+    if (event.isAllDay) return;
     final minutes = event.reminderMinutesBefore;
     if (minutes == null) return;
     final start = shared

@@ -1,6 +1,6 @@
 # Projektstand
 
-Stand: 1. September 2026  
+Stand: 2. September 2026  
 Version: `0.4.1+8`
 
 ## Aktueller Produktstand
@@ -33,6 +33,9 @@ Gemeinsame Kalenderdaten liegen in Cloud Firestore. Angezeigt wird nur bestätig
   Wiederholungsdaten bleiben als einmalige Termine kompatibel
 - monatliche Serien überspringen Monate ohne den ursprünglichen Kalendertag
 - Bearbeiten und Löschen betreffen aktuell jeweils die gesamte Terminserie
+- ganztägige Termine einschließlich wiederkehrender Serien; alte Termine ohne
+  Ganztägig-Feld bleiben zeitgebunden kompatibel
+- ganztägige Termine zeigen keine Uhrzeit und verwenden aktuell keine Reminder
 - Live-Synchronisierung zwischen Mitgliedern/Geräten
 - Revisionsschutz gegen veraltete Änderungen
 - drei Wichtigkeitsstufen für Termine
@@ -46,6 +49,9 @@ Gemeinsame Kalenderdaten liegen in Cloud Firestore. Angezeigt wird nur bestätig
 - Besitzer können einen Kalender Spark-kompatibel auflösen; aufgelöste Kalender
   sind für alle bisherigen Mitglieder gesperrt
 - Kalenderverwaltung und Konto sind aus dem Kalenderkopf erreichbar
+- einheitliche kurze Erfolgs- und Fehlermeldungen für Termine, Serien,
+  Kalender-, Mitglieder-, Einladungs- und Kontoaktionen
+- lokale Busy-Zustände schützen wichtige Schreibaktionen vor doppelten Writes
 
 ## Architektur und Sicherheit
 
@@ -81,6 +87,10 @@ Auf echten Android-Geräten bestätigt:
 - wiederkehrende Termine mit zwei Mitgliedern: wöchentliche Serie mit Enddatum,
   begrenzte Vorkommen, Live-Synchronisierung, serienweite Bearbeitung und
   vollständiges Löschen erfolgreich geprüft
+- ganztägige Termine: Erstellen, Darstellung ohne Uhrzeit, Bearbeiten und
+  Synchronisierung mit den bestehenden Terminserien bestätigt
+- Nutzerfeedback für Kalender, Einladungen, Termine, Serien, Besitzerwechsel,
+  Austritt und verständliche Offline-Fehler auf zwei Geräten bestätigt
 
 Im virtuellen Android-Gerät bestätigt:
 
@@ -107,8 +117,8 @@ APK:
 Die korrigierte Version `0.4.1+8` wurde über Firebase App Distribution verteilt.
 
 Die aktuelle `firestore.rules`-Version wurde erfolgreich veröffentlicht.
-Besitzerwechsel, Kalenderauflösung und wiederkehrende Termine sind damit
-manuell bestätigt.
+Besitzerwechsel, Kalenderauflösung, wiederkehrende und ganztägige Termine sind
+damit manuell bestätigt.
 
 Firebase CLI ist lokal angemeldet.
 

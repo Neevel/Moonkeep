@@ -27,6 +27,7 @@ void main() {
     await tester.tap(find.text('Speichern'));
     await tester.pumpAndSettle();
     expect(find.text('Picknick'), findsOneWidget);
+    expect(find.text('Termin erstellt.'), findsOneWidget);
 
     await tester.tap(find.text('Picknick'));
     await tester.pumpAndSettle();
@@ -38,6 +39,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Picknick im Park'), findsOneWidget);
     expect(find.text('Picknick'), findsNothing);
+    expect(find.text('Termin gespeichert.'), findsOneWidget);
 
     await tester.ensureVisible(find.byTooltip('Termin löschen'));
     await tester.tap(find.byTooltip('Termin löschen'));
@@ -50,6 +52,7 @@ void main() {
     await tester.tap(find.text('Löschen'));
     await tester.pumpAndSettle();
     expect(find.text('Noch keine Termine'), findsOneWidget);
+    expect(find.text('Termin gelöscht.'), findsOneWidget);
   });
 
   testWidgets('aborting a new event leaves the store unchanged', (
@@ -91,6 +94,7 @@ void main() {
     expect(store.allEvents, hasLength(1));
     expect(store.allEvents.single.recurrence, EventRecurrence.weekly);
     expect(find.textContaining('Wöchentlich'), findsOneWidget);
+    expect(find.text('Terminserie erstellt.'), findsOneWidget);
 
     await tester.tap(find.text('Training'));
     await tester.pumpAndSettle();
@@ -107,6 +111,7 @@ void main() {
     await tester.tap(find.text('Speichern'));
     await tester.pumpAndSettle();
     expect(store.allEvents.single.recurrence, EventRecurrence.daily);
+    expect(find.text('Terminserie gespeichert.'), findsOneWidget);
 
     await tester.ensureVisible(find.byTooltip('Termin löschen'));
     await tester.tap(find.byTooltip('Termin löschen'));
@@ -116,6 +121,69 @@ void main() {
     await tester.tap(find.text('Löschen'));
     await tester.pumpAndSettle();
     expect(store.allEvents, isEmpty);
+    expect(find.text('Terminserie gelöscht.'), findsOneWidget);
+  });
+
+  testWidgets('creates and switches an all-day event without showing times', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(600, 1200);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final store = emptyStore();
+    await tester.pumpWidget(MoonkeepApp(store: store));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Termin anlegen'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextFormField).first, 'Geburtstag');
+    final allDaySwitch = find.widgetWithText(SwitchListTile, 'Ganztägig');
+    expect(find.textContaining('Beginn:'), findsOneWidget);
+    await tester.tap(allDaySwitch);
+    await tester.pumpAndSettle();
+    expect(find.textContaining('Beginn:'), findsNothing);
+    expect(find.textContaining('Ende:'), findsNothing);
+    expect(find.text('Erinnerung'), findsNothing);
+    await tester.tap(find.text('Speichern'));
+    await tester.pumpAndSettle();
+
+    expect(store.allEvents.single.isAllDay, isTrue);
+    expect(find.text('Termin erstellt.'), findsOneWidget);
+    var tile = tester.widget<ListTile>(
+      find.ancestor(
+        of: find.text('Geburtstag'),
+        matching: find.byType(ListTile),
+      ),
+    );
+    expect((tile.subtitle! as Text).data, 'Ganztägig');
+
+    await tester.tap(find.text('Geburtstag'));
+    await tester.pumpAndSettle();
+    expect(tester.widget<SwitchListTile>(allDaySwitch).value, isTrue);
+    await tester.tap(allDaySwitch);
+    await tester.pumpAndSettle();
+    expect(find.textContaining('Beginn:'), findsOneWidget);
+    await tester.tap(find.text('Speichern'));
+    await tester.pumpAndSettle();
+
+    expect(store.allEvents.single.isAllDay, isFalse);
+    expect(find.text('Termin gespeichert.'), findsOneWidget);
+    tile = tester.widget<ListTile>(
+      find.ancestor(
+        of: find.text('Geburtstag'),
+        matching: find.byType(ListTile),
+      ),
+    );
+    expect((tile.subtitle! as Text).data, isNot('Ganztägig'));
+
+    await tester.tap(find.text('Geburtstag'));
+    await tester.pumpAndSettle();
+    await tester.tap(allDaySwitch);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Speichern'));
+    await tester.pumpAndSettle();
+    expect(store.allEvents.single.isAllDay, isTrue);
   });
 
   testWidgets('shows storage load failure without allowing new events', (
@@ -151,6 +219,12 @@ void main() {
     await tester.pumpAndSettle();
     expect(
       find.text('Speichern fehlgeschlagen. Bitte erneut versuchen.'),
+      findsNothing,
+    );
+    expect(
+      find.text(
+        'Termin konnte nicht gespeichert werden. Bitte erneut versuchen.',
+      ),
       findsOneWidget,
     );
     expect(find.text('Neuer Termin'), findsOneWidget);

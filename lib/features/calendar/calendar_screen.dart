@@ -80,8 +80,13 @@ class _CalendarScreenState extends State<CalendarScreen> {
     final verb = notice.kind == CalendarNoticeKind.created
         ? 'Neuer Familientermin'
         : 'Familientermin gelöscht';
+    _showMessage('$verb: ${notice.title}');
+  }
+
+  void _showMessage(String message) {
     ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: Text('$verb: ${notice.title}')));
+      ..removeCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(message)));
   }
 
   void _syncReminders() {
@@ -119,6 +124,17 @@ class _CalendarScreenState extends State<CalendarScreen> {
       ),
     );
     if (saved != null && mounted) {
+      final isSeries =
+          (event != null && event.recurrence != EventRecurrence.none) ||
+          saved.recurrence != EventRecurrence.none;
+      final success = isSeries
+          ? event == null
+                ? 'Terminserie erstellt.'
+                : 'Terminserie gespeichert.'
+          : event == null
+          ? 'Termin erstellt.'
+          : 'Termin gespeichert.';
+      var feedback = success;
       setState(() {
         _day = DateUtils.dateOnly(saved.start);
         _visibleMonth = DateTime(_day.year, _day.month);
@@ -129,26 +145,13 @@ class _CalendarScreenState extends State<CalendarScreen> {
         if (saved.reminderMinutesBefore != null) {
           final allowed = await reminders.requestPermission();
           if (!allowed && mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text(
-                  'Termin gespeichert. Benachrichtigungen sind auf diesem Gerät nicht erlaubt.',
-                ),
-              ),
-            );
+            feedback =
+                '$success Erinnerungen sind auf diesem Gerät nicht erlaubt.';
           }
         }
         await reminders.schedule(saved, shared: _store!.isShared);
       }
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              event == null ? 'Termin wurde erstellt.' : 'Termin gespeichert.',
-            ),
-          ),
-        );
-      }
+      if (mounted) _showMessage(feedback);
     }
   }
 
@@ -186,20 +189,18 @@ class _CalendarScreenState extends State<CalendarScreen> {
       await _store!.delete(event.id, expectedRevision: event.revision);
       await widget.reminders?.cancel(event.id);
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('Termin wurde gelöscht.')));
+        _showMessage(
+          event.recurrence == EventRecurrence.none
+              ? 'Termin gelöscht.'
+              : 'Terminserie gelöscht.',
+        );
       }
     } catch (error) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              error is CalendarFailure
-                  ? error.message
-                  : 'Löschen fehlgeschlagen. Bitte erneut versuchen.',
-            ),
-          ),
+        _showMessage(
+          error is CalendarFailure
+              ? error.message
+              : 'Termin konnte nicht gelöscht werden. Bitte erneut versuchen.',
         );
       }
     } finally {
@@ -422,8 +423,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
                 color: _importanceColor(context, event.importance),
               ),
               subtitle: Text(
-                '${TimeOfDay.fromDateTime(event.start).format(context)} – '
-                '${TimeOfDay.fromDateTime(event.end).format(context)}'
+                '${event.isAllDay ? 'Ganztägig' : '${TimeOfDay.fromDateTime(event.start).format(context)} – ${TimeOfDay.fromDateTime(event.end).format(context)}'}'
                 '${event.recurrence == EventRecurrence.none ? '' : '\n${event.recurrence.label}${event.recurrenceEnd == null ? '' : ' bis ${MaterialLocalizations.of(context).formatShortDate(event.recurrenceEnd!)}'}'}'
                 '${event.notes.isEmpty ? '' : '\n${event.notes}'}',
               ),
