@@ -1,7 +1,10 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:moonkeep/app.dart';
 import 'package:moonkeep/features/calendar/calendar_event.dart';
+import 'package:moonkeep/features/calendar/calendar_screen.dart';
 import 'package:moonkeep/features/calendar/calendar_store.dart';
 
 void main() {
@@ -156,7 +159,7 @@ void main() {
         matching: find.byType(ListTile),
       ),
     );
-    expect((tile.subtitle! as Text).data, 'Ganztägig');
+    expect((tile.subtitle! as Text).data, 'Ganztägig\nBetrifft: Alle');
 
     await tester.tap(find.text('Geburtstag'));
     await tester.pumpAndSettle();
@@ -261,6 +264,90 @@ void main() {
     expect(tester.takeException(), isNull);
     await tester.tap(find.text('Termin anlegen'));
     await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('creates and edits event member assignments', (tester) async {
+    tester.view.physicalSize = const Size(600, 1200);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final store = emptyStore();
+    await tester.pumpWidget(
+      MaterialApp(
+        home: CalendarScreen(
+          store: store,
+          memberLabels: const {
+            'member-a': 'marcel@example.com',
+            'member-b': 'claire@example.com',
+          },
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Termin anlegen'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextFormField).first, 'Planung');
+    await tester.ensureVisible(find.text('Betrifft'));
+    await tester.tap(find.text('Betrifft'));
+    await tester.pumpAndSettle();
+    expect(
+      tester
+          .widget<CheckboxListTile>(
+            find.byKey(const ValueKey('assignment-all')),
+          )
+          .value,
+      isTrue,
+    );
+    await tester.tap(find.byKey(const ValueKey('assignment-member-a')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Speichern'));
+    await tester.pumpAndSettle();
+
+    expect(store.allEvents.single.assignedMemberIds, {'member-a'});
+    expect(find.textContaining('Betrifft: marcel@example.com'), findsOneWidget);
+
+    await tester.tap(find.text('Planung'));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('Betrifft'));
+    await tester.tap(find.text('Betrifft'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('assignment-member-b')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Speichern'));
+    await tester.pumpAndSettle();
+
+    expect(store.allEvents.single.assignedMemberIds, {'member-a', 'member-b'});
+    expect(
+      find.textContaining('Betrifft: claire@example.com, marcel@example.com'),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('shows a safe fallback for an unknown assigned member', (
+    tester,
+  ) async {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final event = CalendarEvent(
+      id: 'historic',
+      title: 'Historischer Termin',
+      start: today.add(const Duration(hours: 9)),
+      end: today.add(const Duration(hours: 10)),
+      assignedMemberIds: const ['former-member'],
+    );
+    final store = CalendarStore(
+      read: () async => jsonEncode([event.toJson()]),
+      write: (_) async {},
+    );
+    await tester.pumpWidget(MaterialApp(home: CalendarScreen(store: store)));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.textContaining('Betrifft: Ehemaliges Mitglied'),
+      findsOneWidget,
+    );
     expect(tester.takeException(), isNull);
   });
 }

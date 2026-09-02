@@ -27,6 +27,8 @@ Map<String, Object?> sharedEventData(CalendarEvent event) => {
         'endDay': event.recurrenceEnd!.day,
       },
     },
+  if (event.assignedMemberIds.isNotEmpty)
+    'assignedMemberIds': event.assignedMemberIds.toList(),
   'revision': event.revision + 1,
 };
 
@@ -42,6 +44,7 @@ CalendarEvent sharedEvent(String id, Map<String, dynamic> data) {
   final reminder = data['reminderMinutesBefore'];
   final allDay = data['allDay'];
   final recurrenceData = data['recurrence'];
+  final assignedMemberIds = data['assignedMemberIds'];
   var recurrence = EventRecurrence.none;
   DateTime? recurrenceEnd;
   final date = DateTime.utc(y, m, d);
@@ -57,6 +60,12 @@ CalendarEvent sharedEvent(String id, Map<String, dynamic> data) {
           (reminder is! int || ![0, 10, 30, 60, 1440].contains(reminder))) ||
       (allDay != null && allDay is! bool) ||
       (allDay == true && reminder != null) ||
+      (assignedMemberIds != null &&
+          (assignedMemberIds is! List ||
+              assignedMemberIds.length > 50 ||
+              assignedMemberIds.any(
+                (value) => value is! String || value.trim().isEmpty,
+              ))) ||
       (data['revision'] as int) < 1) {
     throw const FormatException('Ungültiger gemeinsamer Termin.');
   }
@@ -106,6 +115,8 @@ CalendarEvent sharedEvent(String id, Map<String, dynamic> data) {
     isAllDay: allDay == true,
     recurrence: recurrence,
     recurrenceEnd: recurrenceEnd,
+    assignedMemberIds:
+        (assignedMemberIds as List<dynamic>?)?.cast<String>() ?? const [],
   );
 }
 

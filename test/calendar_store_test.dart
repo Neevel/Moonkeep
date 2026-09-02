@@ -66,8 +66,29 @@ void main() {
     });
     expect(restored.recurrence, EventRecurrence.none);
     expect(restored.isAllDay, isFalse);
+    expect(restored.appliesToAllMembers, isTrue);
     expect(restored.occursOn(DateTime(2026, 8, 28)), isTrue);
     expect(restored.occursOn(DateTime(2026, 8, 29)), isFalse);
+  });
+
+  test('member assignments round-trip with recurring all-day events', () {
+    final original = CalendarEvent(
+      id: 'assigned-series',
+      title: 'Gemeinsamer Ausflug',
+      start: DateTime(2026, 9, 1, 9),
+      end: DateTime(2026, 9, 1, 10),
+      isAllDay: true,
+      recurrence: EventRecurrence.weekly,
+      assignedMemberIds: const ['member-a', 'member-b'],
+    );
+    final restored = CalendarEvent.fromJson(
+      jsonDecode(jsonEncode(original.toJson())) as Map<String, dynamic>,
+    );
+
+    expect(restored.assignedMemberIds, {'member-a', 'member-b'});
+    expect(restored.appliesToAllMembers, isFalse);
+    expect(restored.isAllDay, isTrue);
+    expect(restored.occursOn(DateTime(2026, 9, 8)), isTrue);
   });
 
   test('all-day events round-trip and work with recurrence', () {

@@ -13,6 +13,7 @@ void main() {
       revision: 4,
       recurrence: EventRecurrence.yearly,
       recurrenceEnd: DateTime.utc(2032, 2, 29),
+      assignedMemberIds: const ['member-a', 'member-b'],
     );
     final data = sharedEventData(original);
     expect(data['revision'], 5);
@@ -25,6 +26,7 @@ void main() {
     expect(restored.recurrence, EventRecurrence.yearly);
     expect(restored.recurrenceEnd, DateTime.utc(2032, 2, 29));
     expect(restored.isAllDay, isFalse);
+    expect(restored.assignedMemberIds, {'member-a', 'member-b'});
   });
 
   test('shared all-day event round-trips without a reminder', () {
@@ -67,6 +69,7 @@ void main() {
     );
     expect(sharedEvent('one', valid).recurrence, EventRecurrence.none);
     expect(sharedEvent('one', valid).isAllDay, isFalse);
+    expect(sharedEvent('one', valid).appliesToAllMembers, isTrue);
     expect(
       () => sharedEvent('one', {...valid, 'allDay': 'yes'}),
       throwsFormatException,
@@ -84,6 +87,10 @@ void main() {
         ...valid,
         'recurrence': {'frequency': 'sometimes'},
       }),
+      throwsFormatException,
+    );
+    expect(
+      () => sharedEvent('one', {...valid, 'assignedMemberIds': 'member-a'}),
       throwsFormatException,
     );
   });

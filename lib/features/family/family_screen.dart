@@ -146,6 +146,9 @@ class _FamilyScreenState extends State<FamilyScreen> {
           store: calendar,
           disposeStore: true,
           reminders: widget.reminders,
+          memberLabels: {
+            for (final member in _members) member.id: member.email,
+          },
         ),
       ),
     );

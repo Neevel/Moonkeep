@@ -406,6 +406,26 @@ test('all-day event field is optional, boolean, and disables reminders', async (
   ));
 });
 
+test('event member assignments are optional and bounded', async () => {
+  const client = db('alice');
+  await assertSucceeds(setDoc(
+    doc(client, 'families/alpha/events/unassigned'),
+    event(),
+  ));
+  await assertSucceeds(setDoc(
+    doc(client, 'families/alpha/events/assigned'),
+    {...event(), assignedMemberIds: ['alice', 'bob']},
+  ));
+  await assertFails(setDoc(
+    doc(client, 'families/alpha/events/bad-assignments'),
+    {...event(), assignedMemberIds: 'alice'},
+  ));
+  await assertFails(setDoc(
+    doc(client, 'families/alpha/events/too-many-assignments'),
+    {...event(), assignedMemberIds: Array.from({length: 51}, (_, i) => `member-${i}`)},
+  ));
+});
+
 test('creation and deletion activity is atomic, private, and authentic', async () => {
   await invite();
   await join('bob');

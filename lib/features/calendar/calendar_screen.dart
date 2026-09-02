@@ -13,11 +13,13 @@ class CalendarScreen extends StatefulWidget {
     this.store,
     this.disposeStore = false,
     this.reminders,
+    this.memberLabels = const {},
   });
 
   final CalendarRepository? store;
   final bool disposeStore;
   final ReminderService? reminders;
+  final Map<String, String> memberLabels;
 
   @override
   State<CalendarScreen> createState() => _CalendarScreenState();
@@ -119,8 +121,12 @@ class _CalendarScreenState extends State<CalendarScreen> {
   Future<void> _edit([CalendarEvent? event]) async {
     final saved = await Navigator.of(context).push<CalendarEvent>(
       MaterialPageRoute(
-        builder: (context) =>
-            EventEditor(store: _store!, day: _day, event: event),
+        builder: (context) => EventEditor(
+          store: _store!,
+          day: _day,
+          event: event,
+          memberLabels: widget.memberLabels,
+        ),
       ),
     );
     if (saved != null && mounted) {
@@ -424,6 +430,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
               ),
               subtitle: Text(
                 '${event.isAllDay ? 'Ganztägig' : '${TimeOfDay.fromDateTime(event.start).format(context)} – ${TimeOfDay.fromDateTime(event.end).format(context)}'}'
+                '\nBetrifft: ${_assignmentLabel(event)}'
                 '${event.recurrence == EventRecurrence.none ? '' : '\n${event.recurrence.label}${event.recurrenceEnd == null ? '' : ' bis ${MaterialLocalizations.of(context).formatShortDate(event.recurrenceEnd!)}'}'}'
                 '${event.notes.isEmpty ? '' : '\n${event.notes}'}',
               ),
@@ -437,6 +444,16 @@ class _CalendarScreenState extends State<CalendarScreen> {
           ),
       ],
     );
+  }
+
+  String _assignmentLabel(CalendarEvent event) {
+    if (event.appliesToAllMembers) return 'Alle';
+    final labels =
+        event.assignedMemberIds
+            .map((id) => widget.memberLabels[id] ?? 'Ehemaliges Mitglied')
+            .toList()
+          ..sort();
+    return labels.join(', ');
   }
 
   Color _importanceColor(BuildContext context, EventImportance importance) =>

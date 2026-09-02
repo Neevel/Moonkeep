@@ -9,11 +9,13 @@ class EventEditor extends StatefulWidget {
     required this.store,
     required this.day,
     this.event,
+    this.memberLabels = const {},
   });
 
   final CalendarRepository store;
   final DateTime day;
   final CalendarEvent? event;
+  final Map<String, String> memberLabels;
 
   @override
   State<EventEditor> createState() => _EventEditorState();
@@ -31,6 +33,7 @@ class _EventEditorState extends State<EventEditor> {
   late bool _isAllDay;
   late EventRecurrence _recurrence;
   late DateTime? _recurrenceEnd;
+  late Set<String> _assignedMemberIds;
   bool _busy = false;
   String? _error;
 
@@ -52,6 +55,7 @@ class _EventEditorState extends State<EventEditor> {
     _isAllDay = event?.isAllDay ?? false;
     _recurrence = event?.recurrence ?? EventRecurrence.none;
     _recurrenceEnd = event?.recurrenceEnd;
+    _assignedMemberIds = {...?event?.assignedMemberIds};
   }
 
   @override
@@ -154,6 +158,7 @@ class _EventEditorState extends State<EventEditor> {
         recurrenceEnd: _recurrence == EventRecurrence.none
             ? null
             : _recurrenceEnd,
+        assignedMemberIds: _assignedMemberIds,
       );
       await widget.store.save(event);
       if (mounted) Navigator.of(context).pop(event);
@@ -165,6 +170,66 @@ class _EventEditorState extends State<EventEditor> {
         });
       }
     }
+  }
+
+  String _assignmentLabel() {
+    if (_assignedMemberIds.isEmpty) return 'Alle';
+    final labels =
+        _assignedMemberIds
+            .map((id) => widget.memberLabels[id] ?? 'Ehemaliges Mitglied')
+            .toList()
+          ..sort();
+    return labels.join(', ');
+  }
+
+  Widget _assignmentEditor() {
+    final members = widget.memberLabels.entries.toList()
+      ..sort((a, b) => a.value.compareTo(b.value));
+    final unknownIds = _assignedMemberIds
+        .where((id) => !widget.memberLabels.containsKey(id))
+        .toList();
+    return ExpansionTile(
+      tilePadding: EdgeInsets.zero,
+      childrenPadding: EdgeInsets.zero,
+      leading: const Icon(Icons.group_outlined),
+      title: const Text('Betrifft'),
+      subtitle: Text(_assignmentLabel()),
+      children: [
+        CheckboxListTile(
+          key: const ValueKey('assignment-all'),
+          contentPadding: EdgeInsets.zero,
+          title: const Text('Alle'),
+          value: _assignedMemberIds.isEmpty,
+          onChanged: _busy
+              ? null
+              : (_) => setState(() => _assignedMemberIds.clear()),
+        ),
+        for (final member in members)
+          CheckboxListTile(
+            key: ValueKey('assignment-${member.key}'),
+            contentPadding: EdgeInsets.zero,
+            title: Text(member.value),
+            value: _assignedMemberIds.contains(member.key),
+            onChanged: _busy
+                ? null
+                : (selected) => setState(() {
+                    if (selected == true) {
+                      _assignedMemberIds.add(member.key);
+                    } else {
+                      _assignedMemberIds.remove(member.key);
+                    }
+                  }),
+          ),
+        for (final id in unknownIds)
+          CheckboxListTile(
+            key: ValueKey('assignment-unknown-$id'),
+            contentPadding: EdgeInsets.zero,
+            title: const Text('Ehemaliges Mitglied'),
+            value: true,
+            onChanged: null,
+          ),
+      ],
+    );
   }
 
   @override
@@ -245,6 +310,11 @@ class _EventEditorState extends State<EventEditor> {
                       ),
                     ],
                   ),
+                if (widget.memberLabels.isNotEmpty ||
+                    _assignedMemberIds.isNotEmpty) ...[
+                  const SizedBox(height: 16),
+                  _assignmentEditor(),
+                ],
                 const SizedBox(height: 24),
                 DropdownButtonFormField<EventImportance>(
                   isExpanded: true,

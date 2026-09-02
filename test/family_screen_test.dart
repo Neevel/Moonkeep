@@ -226,6 +226,10 @@ void main() {
   testWidgets('existing membership opens the shared calendar on app start', (
     tester,
   ) async {
+    tester.view.physicalSize = const Size(600, 1200);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
     final auth = FakeAuth(
       const AccountIdentity(email: 'test@example.test', emailVerified: true),
     );
@@ -238,6 +242,14 @@ void main() {
     expect(find.text('Termin anlegen'), findsOneWidget);
     expect(find.byTooltip('Kalender verwalten'), findsOneWidget);
     expect(find.byTooltip('Mein Konto'), findsOneWidget);
+    await tester.tap(find.text('Termin anlegen'));
+    await tester.pumpAndSettle();
+    final assignments = find.widgetWithText(ExpansionTile, 'Betrifft').first;
+    await tester.ensureVisible(assignments);
+    await tester.tap(assignments);
+    await tester.pumpAndSettle();
+    expect(find.text('owner@example.test'), findsOneWidget);
+    expect(find.text('member@example.test'), findsOneWidget);
   });
 
   testWidgets('joins family and opens separate shared calendar', (

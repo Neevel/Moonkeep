@@ -155,7 +155,8 @@ service cloud.firestore {
         function validEvent(d) {
           return d.keys().hasOnly(['title', 'notes', 'year', 'month', 'day',
             'startMinute', 'endMinute', 'importance', 'reminderMinutesBefore',
-            'allDay', 'recurrence', 'revision', 'updatedBy', 'updatedAt'])
+            'allDay', 'recurrence', 'assignedMemberIds', 'revision',
+            'updatedBy', 'updatedAt'])
             && d.title is string && d.title.size() >= 1 && d.title.size() <= 120
             && d.notes is string && d.notes.size() <= 2000
             && d.year is int && d.year >= 1900 && d.year <= 2100
@@ -172,8 +173,13 @@ service cloud.firestore {
             && (!d.get('allDay', false)
               || d.get('reminderMinutesBefore', null) == null)
             && validRecurrence(d)
+            && validAssignments(d)
             && d.revision is int && d.updatedBy == request.auth.uid
             && d.updatedAt == request.time;
+        }
+        function validAssignments(d) {
+          let assignments = d.get('assignedMemberIds', []);
+          return assignments is list && assignments.size() <= 50;
         }
         function validRecurrence(d) {
           let r = d.get('recurrence', null);

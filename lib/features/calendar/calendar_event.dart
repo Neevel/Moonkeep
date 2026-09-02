@@ -32,8 +32,10 @@ class CalendarEvent {
     this.isAllDay = false,
     this.recurrence = EventRecurrence.none,
     this.recurrenceEnd,
+    Iterable<String> assignedMemberIds = const [],
   }) : title = title.trim(),
-       notes = notes.trim() {
+       notes = notes.trim(),
+       assignedMemberIds = Set.unmodifiable(assignedMemberIds) {
     if (id.isEmpty || this.title.isEmpty) {
       throw ArgumentError('ID und Titel dürfen nicht leer sein.');
     }
@@ -57,6 +59,12 @@ class CalendarEvent {
         'Das Wiederholungsende darf nicht vor dem Terminbeginn liegen.',
       );
     }
+    if (this.assignedMemberIds.any((id) => id.trim().isEmpty)) {
+      throw ArgumentError('Mitglieds-IDs dürfen nicht leer sein.');
+    }
+    if (this.assignedMemberIds.length > 50) {
+      throw ArgumentError('Zu viele Terminzuordnungen.');
+    }
   }
 
   final String id;
@@ -70,6 +78,11 @@ class CalendarEvent {
   final bool isAllDay;
   final EventRecurrence recurrence;
   final DateTime? recurrenceEnd;
+
+  /// Empty means that the event applies to every calendar member.
+  final Set<String> assignedMemberIds;
+
+  bool get appliesToAllMembers => assignedMemberIds.isEmpty;
 
   bool occursOn(DateTime day) {
     final distance = _civilDay(day).difference(_civilDay(start)).inDays;
@@ -99,6 +112,8 @@ class CalendarEvent {
     'isAllDay': isAllDay,
     'recurrence': recurrence.name,
     'recurrenceEnd': recurrenceEnd?.toIso8601String(),
+    if (assignedMemberIds.isNotEmpty)
+      'assignedMemberIds': assignedMemberIds.toList(),
   };
 
   factory CalendarEvent.fromJson(Map<String, dynamic> json) {
@@ -123,6 +138,9 @@ class CalendarEvent {
       recurrenceEnd: recurrence == EventRecurrence.none || recurrenceEnd == null
           ? null
           : DateTime.parse(recurrenceEnd as String),
+      assignedMemberIds:
+          (json['assignedMemberIds'] as List<dynamic>?)?.cast<String>() ??
+          const [],
     );
   }
 }
