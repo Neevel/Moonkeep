@@ -1,5 +1,3 @@
-import 'dart:math' as math;
-
 import 'package:flutter/material.dart';
 
 import 'calendar_event.dart';
@@ -15,9 +13,6 @@ class WeekCalendarView extends StatelessWidget {
     required this.onDaySelected,
     required this.onEventSelected,
   });
-
-  static const double _dayWidth = 116;
-  static const double _eventHeight = 38;
 
   final DateTime weekStart;
   final DateTime selectedDay;
@@ -35,210 +30,212 @@ class WeekCalendarView extends StatelessWidget {
       7,
       (index) => weekStart.add(Duration(days: index)),
     );
-    final allDayCount = days
-        .map((day) => _allDayEvents(day).length)
-        .fold<int>(0, math.max);
-    final timedCount = days
-        .map((day) => _timedEvents(day).length)
-        .fold<int>(0, math.max);
-    final allDayHeight = _rowHeight(allDayCount, emptyHeight: 0);
-    final timedHeight = _rowHeight(timedCount, emptyHeight: 300);
-
-    return Padding(
-      padding: const EdgeInsets.all(10),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Row(
-            children: [
-              IconButton(
-                tooltip: 'Vorherige Woche',
-                onPressed: onPrevious,
-                icon: const Icon(Icons.chevron_left),
-              ),
-              Expanded(
-                child: Text(
-                  '${localizations.formatShortDate(weekStart)} – ${localizations.formatShortDate(weekEnd)}',
-                  textAlign: TextAlign.center,
-                  style: Theme.of(context).textTheme.titleMedium,
+    return GestureDetector(
+      key: const ValueKey('week-swipe-area'),
+      behavior: HitTestBehavior.opaque,
+      onHorizontalDragEnd: (details) {
+        final velocity = details.primaryVelocity ?? 0;
+        if (velocity < -250) {
+          onNext();
+        } else if (velocity > 250) {
+          onPrevious();
+        }
+      },
+      child: Padding(
+        padding: const EdgeInsets.all(10),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                IconButton(
+                  tooltip: 'Vorherige Woche',
+                  onPressed: onPrevious,
+                  icon: const Icon(Icons.chevron_left),
                 ),
-              ),
-              IconButton(
-                tooltip: 'Nächste Woche',
-                onPressed: onNext,
-                icon: const Icon(Icons.chevron_right),
-              ),
-            ],
-          ),
-          const SizedBox(height: 4),
-          Semantics(
-            label: 'Wochenkalender. Nach oben für die nächste, nach unten für die vorherige Woche wischen.',
-            child: GestureDetector(
-              key: const ValueKey('week-swipe-area'),
-              behavior: HitTestBehavior.opaque,
-              onVerticalDragEnd: (details) {
-                final velocity = details.primaryVelocity ?? 0;
-                if (velocity < -250) {
-                  onNext();
-                } else if (velocity > 250) {
-                  onPrevious();
-                }
-              },
-              child: SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                child: SizedBox(
-                  width: 7 * _dayWidth,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      _headers(context, days),
-                      if (allDayCount > 0) ...[
-                        const Padding(
-                          padding: EdgeInsets.fromLTRB(4, 4, 4, 3),
-                          child: Text(
-                            'Ganztägig',
-                            style: TextStyle(
-                              fontSize: 11,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ),
-                        _eventRow(context, days, allDayHeight, allDay: true),
-                        const SizedBox(height: 6),
-                      ],
-                      _eventRow(context, days, timedHeight, allDay: false),
-                    ],
+                Expanded(
+                  child: Text(
+                    '${localizations.formatShortDate(weekStart)} – ${localizations.formatShortDate(weekEnd)}',
+                    textAlign: TextAlign.center,
+                    style: Theme.of(context).textTheme.titleMedium,
                   ),
                 ),
-              ),
+                IconButton(
+                  tooltip: 'Nächste Woche',
+                  onPressed: onNext,
+                  icon: const Icon(Icons.chevron_right),
+                ),
+              ],
             ),
-          ),
-        ],
+            const SizedBox(height: 4),
+            LayoutBuilder(
+              builder: (context, constraints) {
+                final columns = constraints.maxWidth >= 720
+                    ? 4
+                    : constraints.maxWidth >= 520
+                    ? 3
+                    : 2;
+                const spacing = 6.0;
+                final width =
+                    (constraints.maxWidth - spacing * (columns - 1)) / columns;
+                return Wrap(
+                  spacing: spacing,
+                  runSpacing: spacing,
+                  children: [
+                    for (final day in days)
+                      SizedBox(
+                        width: width,
+                        child: _WeekDayCard(
+                          day: day,
+                          selected: DateUtils.isSameDay(day, selectedDay),
+                          events: _events(day),
+                          onDaySelected: onDaySelected,
+                          onEventSelected: onEventSelected,
+                        ),
+                      ),
+                  ],
+                );
+              },
+            ),
+          ],
+        ),
       ),
     );
   }
 
-  Widget _headers(BuildContext context, List<DateTime> days) => Row(
-    children: [
-      for (final day in days)
-        SizedBox(
-          width: _dayWidth,
-          child: InkWell(
-            key: ValueKey('week-day-${_dayId(day)}'),
-            onTap: () => onDaySelected(day),
-            borderRadius: BorderRadius.circular(10),
-            child: Container(
-              margin: const EdgeInsets.all(2),
-              padding: const EdgeInsets.symmetric(vertical: 8),
-              decoration: BoxDecoration(
-                color: DateUtils.isSameDay(day, selectedDay)
-                    ? Theme.of(context).colorScheme.primaryContainer
-                    : null,
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: Column(
-                children: [
-                  Text(
-                    const [
-                      'Mo',
-                      'Di',
-                      'Mi',
-                      'Do',
-                      'Fr',
-                      'Sa',
-                      'So',
-                    ][day.weekday - 1],
-                    style: const TextStyle(fontWeight: FontWeight.w600),
-                  ),
-                  Text('${day.day}.${day.month}.'),
-                ],
-              ),
-            ),
-          ),
-        ),
-    ],
-  );
+  List<CalendarEvent> _events(DateTime day) =>
+      eventsByDay[DateTime(day.year, day.month, day.day)] ?? const [];
+}
 
-  Widget _eventRow(
-    BuildContext context,
-    List<DateTime> days,
-    double height, {
-    required bool allDay,
-  }) => Row(
-    crossAxisAlignment: CrossAxisAlignment.start,
-    children: [
-      for (final day in days)
-        GestureDetector(
-          onTap: () => onDaySelected(day),
-          child: Container(
-            key: ValueKey(
-              '${allDay ? 'week-all-day-column' : 'week-timeline'}-${_dayId(day)}',
-            ),
-            width: _dayWidth,
-            height: height,
-            padding: const EdgeInsets.all(3),
-            decoration: BoxDecoration(
-              color: DateUtils.isSameDay(day, selectedDay)
-                  ? Theme.of(context).colorScheme.primaryContainer
-                        .withValues(alpha: 0.22)
-                  : null,
-              border: Border(
-                left: BorderSide(
-                  color: Theme.of(context).colorScheme.outlineVariant,
-                ),
-                bottom: BorderSide(
-                  color: Theme.of(context).colorScheme.outlineVariant,
-                ),
-              ),
-            ),
+class _WeekDayCard extends StatelessWidget {
+  const _WeekDayCard({
+    required this.day,
+    required this.selected,
+    required this.events,
+    required this.onDaySelected,
+    required this.onEventSelected,
+  });
+
+  static const double _eventHeight = 38;
+
+  final DateTime day;
+  final bool selected;
+  final List<CalendarEvent> events;
+  final ValueChanged<DateTime> onDaySelected;
+  final void Function(CalendarEvent event, DateTime day) onEventSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    final allDay = events.where((event) => event.isAllDay).toList()
+      ..sort((a, b) => a.title.compareTo(b.title));
+    final timed = events.where((event) => !event.isAllDay).toList()
+      ..sort((a, b) {
+        final start = a.start.compareTo(b.start);
+        return start != 0 ? start : a.id.compareTo(b.id);
+      });
+    final today = DateUtils.isSameDay(day, DateTime.now());
+    return Material(
+      color: selected
+          ? colors.primaryContainer.withValues(alpha: 0.42)
+          : colors.surface,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: BorderSide(
+          color: today
+              ? colors.primary.withValues(alpha: 0.7)
+              : colors.outlineVariant,
+          width: today ? 1.5 : 1,
+        ),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        key: ValueKey('week-day-${_dayId(day)}'),
+        onTap: () => onDaySelected(day),
+        child: ConstrainedBox(
+          key: ValueKey('week-day-card-${_dayId(day)}'),
+          constraints: const BoxConstraints(minHeight: 150),
+          child: Padding(
+            padding: const EdgeInsets.all(7),
             child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                for (final event
-                    in allDay ? _allDayEvents(day) : _timedEvents(day))
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        '${_weekday(day.weekday)} ${day.day}.${day.month}.',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w700,
+                          color: today ? colors.primary : null,
+                        ),
+                      ),
+                    ),
+                    Text(
+                      '${events.length}',
+                      style: TextStyle(fontSize: 11, color: colors.outline),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                if (allDay.isNotEmpty) ...[
+                  Text(
+                    'Ganztägig',
+                    style: TextStyle(
+                      fontSize: 10,
+                      color: colors.outline,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 3),
+                  for (final event in allDay)
+                    _event(
+                      event,
+                      label: '• ${event.title}',
+                      key: 'week-all-day-${event.id}-${_dayId(day)}',
+                    ),
+                  if (timed.isNotEmpty) const SizedBox(height: 5),
+                ],
+                for (final event in timed)
+                  _event(
+                    event,
+                    label:
+                        '${_time(event.start)} – ${_time(event.end)}\n${event.title}',
+                    key: 'week-event-${event.id}-${_dayId(day)}',
+                  ),
+                if (events.isEmpty)
                   Padding(
-                    padding: const EdgeInsets.only(bottom: 4),
-                    child: SizedBox(
-                      key: ValueKey(
-                        '${allDay ? 'week-all-day' : 'week-event'}-${event.id}-${_dayId(day)}',
-                      ),
-                      height: _eventHeight,
-                      child: _CompactEvent(
-                        event: event,
-                        label: allDay
-                            ? '• ${event.title}'
-                            : '${_time(event.start)} – ${_time(event.end)}\n${event.title}',
-                        onTap: () => onEventSelected(event, day),
-                      ),
+                    padding: const EdgeInsets.only(top: 22),
+                    child: Text(
+                      'Keine Termine',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(fontSize: 11, color: colors.outline),
                     ),
                   ),
               ],
             ),
           ),
         ),
-    ],
+      ),
+    );
+  }
+
+  Widget _event(
+    CalendarEvent event, {
+    required String label,
+    required String key,
+  }) => Padding(
+    padding: const EdgeInsets.only(bottom: 4),
+    child: SizedBox(
+      key: ValueKey(key),
+      height: _eventHeight,
+      child: _CompactEvent(
+        event: event,
+        label: label,
+        onTap: () => onEventSelected(event, day),
+      ),
+    ),
   );
-
-  List<CalendarEvent> _allDayEvents(DateTime day) {
-    final events = _events(day).where((event) => event.isAllDay).toList();
-    events.sort((a, b) => a.title.compareTo(b.title));
-    return events;
-  }
-
-  List<CalendarEvent> _timedEvents(DateTime day) {
-    final events = _events(day).where((event) => !event.isAllDay).toList();
-    events.sort((a, b) {
-      final start = a.start.compareTo(b.start);
-      return start != 0 ? start : a.id.compareTo(b.id);
-    });
-    return events;
-  }
-
-  List<CalendarEvent> _events(DateTime day) =>
-      eventsByDay[DateTime(day.year, day.month, day.day)] ?? const [];
-
-  double _rowHeight(int count, {required double emptyHeight}) => count == 0
-      ? emptyHeight
-      : math.max(emptyHeight, 7 + count * (_eventHeight + 4));
 }
 
 class _CompactEvent extends StatelessWidget {
@@ -267,7 +264,7 @@ class _CompactEvent extends StatelessWidget {
         onTap: onTap,
         borderRadius: BorderRadius.circular(6),
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 3),
+          padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 3),
           child: Align(
             alignment: Alignment.centerLeft,
             child: Text(
@@ -287,6 +284,9 @@ class _CompactEvent extends StatelessWidget {
     );
   }
 }
+
+String _weekday(int weekday) =>
+    const ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'][weekday - 1];
 
 String _time(DateTime value) =>
     '${value.hour.toString().padLeft(2, '0')}:${value.minute.toString().padLeft(2, '0')}';

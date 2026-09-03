@@ -25,67 +25,79 @@ class MonthCalendarView extends StatelessWidget {
     final localizations = MaterialLocalizations.of(context);
     final first = DateTime(visibleMonth.year, visibleMonth.month, 1);
     final gridStart = first.subtract(Duration(days: first.weekday - 1));
-    return Padding(
-      padding: const EdgeInsets.all(10),
-      child: Column(
-        children: [
-          Row(
-            children: [
-              IconButton(
-                tooltip: localizations.previousMonthTooltip,
-                onPressed: onPrevious,
-                icon: const Icon(Icons.chevron_left),
-              ),
-              Expanded(
-                child: Text(
-                  localizations.formatMonthYear(visibleMonth),
-                  textAlign: TextAlign.center,
-                  style: Theme.of(context).textTheme.titleMedium,
+    return GestureDetector(
+      key: const ValueKey('month-swipe-area'),
+      behavior: HitTestBehavior.opaque,
+      onHorizontalDragEnd: (details) {
+        final velocity = details.primaryVelocity ?? 0;
+        if (velocity < -250) {
+          onNext();
+        } else if (velocity > 250) {
+          onPrevious();
+        }
+      },
+      child: Padding(
+        padding: const EdgeInsets.all(10),
+        child: Column(
+          children: [
+            Row(
+              children: [
+                IconButton(
+                  tooltip: localizations.previousMonthTooltip,
+                  onPressed: onPrevious,
+                  icon: const Icon(Icons.chevron_left),
                 ),
-              ),
-              IconButton(
-                tooltip: localizations.nextMonthTooltip,
-                onPressed: onNext,
-                icon: const Icon(Icons.chevron_right),
-              ),
-            ],
-          ),
-          Row(
-            children: [
-              for (final label in ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'])
                 Expanded(
-                  child: Padding(
-                    padding: EdgeInsets.symmetric(vertical: 6),
-                    child: Text(
-                      label,
-                      textAlign: TextAlign.center,
-                      style: TextStyle(fontWeight: FontWeight.w600),
-                    ),
+                  child: Text(
+                    localizations.formatMonthYear(visibleMonth),
+                    textAlign: TextAlign.center,
+                    style: Theme.of(context).textTheme.titleMedium,
                   ),
                 ),
-            ],
-          ),
-          for (var week = 0; week < 6; week++)
+                IconButton(
+                  tooltip: localizations.nextMonthTooltip,
+                  onPressed: onNext,
+                  icon: const Icon(Icons.chevron_right),
+                ),
+              ],
+            ),
             Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                for (var weekday = 0; weekday < 7; weekday++)
+                for (final label in ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'])
                   Expanded(
-                    child: _MonthDayCell(
-                      day: gridStart.add(Duration(days: week * 7 + weekday)),
-                      visibleMonth: visibleMonth,
-                      selectedDay: selectedDay,
-                      events:
-                          eventsByDay[_dateKey(
-                            gridStart.add(Duration(days: week * 7 + weekday)),
-                          )] ??
-                          const [],
-                      onSelected: onDaySelected,
+                    child: Padding(
+                      padding: EdgeInsets.symmetric(vertical: 6),
+                      child: Text(
+                        label,
+                        textAlign: TextAlign.center,
+                        style: TextStyle(fontWeight: FontWeight.w600),
+                      ),
                     ),
                   ),
               ],
             ),
-        ],
+            for (var week = 0; week < 6; week++)
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  for (var weekday = 0; weekday < 7; weekday++)
+                    Expanded(
+                      child: _MonthDayCell(
+                        day: gridStart.add(Duration(days: week * 7 + weekday)),
+                        visibleMonth: visibleMonth,
+                        selectedDay: selectedDay,
+                        events:
+                            eventsByDay[_dateKey(
+                              gridStart.add(Duration(days: week * 7 + weekday)),
+                            )] ??
+                            const [],
+                        onSelected: onDaySelected,
+                      ),
+                    ),
+                ],
+              ),
+          ],
+        ),
       ),
     );
   }

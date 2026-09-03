@@ -35,6 +35,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
   DateTime _visibleMonth = DateUtils.dateOnly(DateTime.now());
   DateTime _visibleWeekStart = _startOfWeek(DateTime.now());
   _CalendarViewMode _viewMode = _CalendarViewMode.month;
+  int _navigationDirection = 1;
   String? _error;
   bool _busy = false;
   StreamSubscription<CalendarNotice>? _noticeSubscription;
@@ -96,9 +97,12 @@ class _CalendarScreenState extends State<CalendarScreen> {
       ..showSnackBar(SnackBar(content: Text(message)));
   }
 
-  void _selectDay(DateTime day) {
+  void _selectDay(DateTime day, {int? navigationDirection}) {
     final selected = DateUtils.dateOnly(day);
     setState(() {
+      if (navigationDirection != null) {
+        _navigationDirection = navigationDirection;
+      }
       _day = selected;
       _visibleMonth = DateTime(selected.year, selected.month);
       _visibleWeekStart = _startOfWeek(selected);
@@ -106,17 +110,35 @@ class _CalendarScreenState extends State<CalendarScreen> {
     _store?.selectDay(selected);
   }
 
-  void _goToday() => _selectDay(DateTime.now());
+  void _goToday() {
+    final today = DateUtils.dateOnly(DateTime.now());
+    final targetPeriod = _viewMode == _CalendarViewMode.month
+        ? today.year * 12 + today.month
+        : _startOfWeek(today).millisecondsSinceEpoch;
+    final currentPeriod = _viewMode == _CalendarViewMode.month
+        ? _visibleMonth.year * 12 + _visibleMonth.month
+        : _visibleWeekStart.millisecondsSinceEpoch;
+    _selectDay(
+      today,
+      navigationDirection: targetPeriod >= currentPeriod ? 1 : -1,
+    );
+  }
 
   void _changeMonth(int offset) {
     final month = DateTime(_visibleMonth.year, _visibleMonth.month + offset);
     final lastDay = DateTime(month.year, month.month + 1, 0).day;
     final selectedDay = _day.day > lastDay ? lastDay : _day.day;
-    _selectDay(DateTime(month.year, month.month, selectedDay));
+    _selectDay(
+      DateTime(month.year, month.month, selectedDay),
+      navigationDirection: offset,
+    );
   }
 
   void _changeWeek(int offset) {
-    _selectDay(_day.add(Duration(days: offset * 7)));
+    _selectDay(
+      _day.add(Duration(days: offset * 7)),
+      navigationDirection: offset,
+    );
   }
 
   void _syncReminders() {
@@ -245,7 +267,6 @@ class _CalendarScreenState extends State<CalendarScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
     return Scaffold(
       appBar: AppBar(
         title: Row(
@@ -313,37 +334,8 @@ class _CalendarScreenState extends State<CalendarScreen> {
                 child: ConstrainedBox(
                   constraints: const BoxConstraints(maxWidth: 960),
                   child: ListView(
-                    padding: const EdgeInsets.fromLTRB(20, 16, 20, 100),
+                    padding: const EdgeInsets.fromLTRB(12, 8, 12, 100),
                     children: [
-                      Text(
-                        'Mehr Zeit füreinander.',
-                        style: Theme.of(context).textTheme.headlineMedium,
-                      ),
-                      const SizedBox(height: 8),
-                      const Text(
-                        'Euer gemeinsamer Alltag beginnt mit einem guten Überblick.',
-                      ),
-                      const SizedBox(height: 20),
-                      Container(
-                        padding: const EdgeInsets.all(14),
-                        decoration: BoxDecoration(
-                          color: colors.secondaryContainer,
-                          borderRadius: BorderRadius.circular(16),
-                        ),
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Icon(Icons.group_outlined, size: 20),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: const Text(
-                                'Gemeinsamer Kalender · Alle Mitglieder können Termine bearbeiten. Uhrzeiten: Europe/Berlin, auch auf Reisen. Nur online verfügbar.',
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(height: 20),
                       Align(
                         alignment: Alignment.center,
                         child: SegmentedButton<_CalendarViewMode>(
@@ -362,6 +354,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
                           selected: {_viewMode},
                           onSelectionChanged: (selection) {
                             setState(() {
+                              _navigationDirection = 1;
                               _viewMode = selection.single;
                               _visibleMonth = DateTime(_day.year, _day.month);
                               _visibleWeekStart = _startOfWeek(_day);
@@ -369,7 +362,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
                           },
                         ),
                       ),
-                      const SizedBox(height: 16),
+                      const SizedBox(height: 8),
                       _calendarAndAgenda(context),
                     ],
                   ),
@@ -381,6 +374,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
 
   Widget _calendarAndAgenda(BuildContext context) {
     final Widget calendar;
+    final String periodKey;
     if (_viewMode == _CalendarViewMode.month) {
       final first = DateTime(_visibleMonth.year, _visibleMonth.month, 1);
       final gridStart = first.subtract(Duration(days: first.weekday - 1));
@@ -390,8 +384,13 @@ class _CalendarScreenState extends State<CalendarScreen> {
         eventsByDay: _eventsByDay(gridStart, 42),
         onPrevious: () => _changeMonth(-1),
         onNext: () => _changeMonth(1),
-        onDaySelected: _selectDay,
+        onDaySelected: (day) {
+          final current = _visibleMonth.year * 12 + _visibleMonth.month;
+          final target = day.year * 12 + day.month;
+          _selectDay(day, navigationDirection: target >= current ? 1 : -1);
+        },
       );
+      periodKey = 'month-${_visibleMonth.year}-${_visibleMonth.month}';
     } else {
       calendar = WeekCalendarView(
         weekStart: _visibleWeekStart,
@@ -405,11 +404,39 @@ class _CalendarScreenState extends State<CalendarScreen> {
           _edit(event);
         },
       );
+      periodKey =
+          'week-${_visibleWeekStart.year}-${_visibleWeekStart.month}-${_visibleWeekStart.day}';
     }
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Card(child: calendar),
+        Card(
+          clipBehavior: Clip.antiAlias,
+          child: AnimatedSwitcher(
+            duration: const Duration(milliseconds: 260),
+            switchInCurve: Curves.easeOutCubic,
+            switchOutCurve: Curves.easeInCubic,
+            layoutBuilder: (currentChild, previousChildren) => Stack(
+              alignment: Alignment.topCenter,
+              children: [
+                ...previousChildren,
+                ?currentChild,
+              ],
+            ),
+            transitionBuilder: (child, animation) {
+              final incoming = child.key == ValueKey(periodKey);
+              final direction = _navigationDirection.toDouble();
+              return SlideTransition(
+                position: Tween<Offset>(
+                  begin: Offset(incoming ? direction : -direction, 0),
+                  end: Offset.zero,
+                ).animate(animation),
+                child: child,
+              );
+            },
+            child: KeyedSubtree(key: ValueKey(periodKey), child: calendar),
+          ),
+        ),
         const SizedBox(height: 20),
         _agenda(context),
       ],

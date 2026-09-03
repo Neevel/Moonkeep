@@ -263,34 +263,56 @@ void main() {
     expect(find.text('Neuer Termin'), findsOneWidget);
   });
 
-  testWidgets('Today resets a browsed month even when today remains selected', (
-    tester,
-  ) async {
-    await tester.pumpWidget(MoonkeepApp(store: emptyStore()));
-    await tester.pumpAndSettle();
-    final localizations = MaterialLocalizations.of(
-      tester.element(find.byType(Scaffold).first),
-    );
-    final today = DateTime.now();
-    final previousMonth = DateTime(today.year, today.month - 1);
-    final nextMonth = DateTime(today.year, today.month + 1);
-    await tester.tap(find.byTooltip(localizations.previousMonthTooltip));
-    await tester.pumpAndSettle();
-    expect(
-      find.text(localizations.formatMonthYear(previousMonth)),
-      findsOneWidget,
-    );
-    await tester.tap(find.byTooltip(localizations.nextMonthTooltip));
-    await tester.pumpAndSettle();
-    expect(find.text(localizations.formatMonthYear(today)), findsOneWidget);
-    await tester.tap(find.byTooltip(localizations.nextMonthTooltip));
-    await tester.pumpAndSettle();
-    expect(find.text(localizations.formatMonthYear(nextMonth)), findsOneWidget);
-    await tester.tap(find.text('Heute'));
-    await tester.pumpAndSettle();
-    expect(find.text(localizations.formatMonthYear(today)), findsOneWidget);
-    expect(find.text(localizations.formatMonthYear(nextMonth)), findsNothing);
-  });
+  testWidgets(
+    'month navigation slides by swipe and buttons and returns today',
+    (tester) async {
+      await tester.pumpWidget(MoonkeepApp(store: emptyStore()));
+      await tester.pumpAndSettle();
+      final localizations = MaterialLocalizations.of(
+        tester.element(find.byType(Scaffold).first),
+      );
+      final today = DateTime.now();
+      final previousMonth = DateTime(today.year, today.month - 1);
+      final nextMonth = DateTime(today.year, today.month + 1);
+      await tester.fling(
+        find.byKey(const ValueKey('month-swipe-area')),
+        const Offset(-300, 0),
+        1000,
+      );
+      await tester.pump(const Duration(milliseconds: 100));
+      expect(find.text(localizations.formatMonthYear(today)), findsOneWidget);
+      expect(
+        find.text(localizations.formatMonthYear(nextMonth)),
+        findsOneWidget,
+      );
+      await tester.pumpAndSettle();
+      await tester.fling(
+        find.byKey(const ValueKey('month-swipe-area')),
+        const Offset(300, 0),
+        1000,
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip(localizations.previousMonthTooltip));
+      await tester.pumpAndSettle();
+      expect(
+        find.text(localizations.formatMonthYear(previousMonth)),
+        findsOneWidget,
+      );
+      await tester.tap(find.byTooltip(localizations.nextMonthTooltip));
+      await tester.pumpAndSettle();
+      expect(find.text(localizations.formatMonthYear(today)), findsOneWidget);
+      await tester.tap(find.byTooltip(localizations.nextMonthTooltip));
+      await tester.pumpAndSettle();
+      expect(
+        find.text(localizations.formatMonthYear(nextMonth)),
+        findsOneWidget,
+      );
+      await tester.tap(find.text('Heute'));
+      await tester.pumpAndSettle();
+      expect(find.text(localizations.formatMonthYear(today)), findsOneWidget);
+      expect(find.text(localizations.formatMonthYear(nextMonth)), findsNothing);
+    },
+  );
 
   testWidgets('month grid shows occurrences, all-day events and overflow', (
     tester,
@@ -408,10 +430,14 @@ void main() {
     expect(tester.getSize(early).height, tester.getSize(timed).height);
     expect(tester.getSize(timed).height, tester.getSize(overlap).height);
     expect(
+      tester.getSize(find.byKey(const ValueKey('week-swipe-area'))).height,
+      greaterThanOrEqualTo(480),
+    );
+    expect(
       tester
-          .getSize(find.byKey(ValueKey('week-timeline-${dayId(tuesday)}')))
+          .getSize(find.byKey(ValueKey('week-day-card-${dayId(weekStart)}')))
           .height,
-      greaterThanOrEqualTo(300),
+      greaterThanOrEqualTo(150),
     );
     expect(find.text('02:00 – 03:00\nFrühdienst'), findsOneWidget);
     expect(find.text('09:00 – 11:00\nBesprechung'), findsOneWidget);
@@ -426,11 +452,27 @@ void main() {
       findsOneWidget,
     );
     expect(tester.takeException(), isNull);
+    await tester.tap(timed);
+    await tester.pumpAndSettle();
+    expect(find.text('Termin bearbeiten'), findsOneWidget);
+    await tester.tap(find.text('Abbrechen'));
+    await tester.pumpAndSettle();
 
     await tester.fling(
       find.byKey(const ValueKey('week-swipe-area')),
-      const Offset(0, -300),
+      const Offset(-300, 0),
       1000,
+    );
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(
+      find.byKey(ValueKey('week-day-${dayId(weekStart)}')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(
+        ValueKey('week-day-${dayId(weekStart.add(const Duration(days: 7)))}'),
+      ),
+      findsOneWidget,
     );
     await tester.pumpAndSettle();
     expect(
@@ -441,7 +483,7 @@ void main() {
     );
     await tester.fling(
       find.byKey(const ValueKey('week-swipe-area')),
-      const Offset(0, 300),
+      const Offset(300, 0),
       1000,
     );
     await tester.pumpAndSettle();
@@ -451,6 +493,17 @@ void main() {
     );
 
     await tester.tap(find.byTooltip('Nächste Woche'));
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(
+      find.byKey(ValueKey('week-day-${dayId(weekStart)}')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(
+        ValueKey('week-day-${dayId(weekStart.add(const Duration(days: 7)))}'),
+      ),
+      findsOneWidget,
+    );
     await tester.pumpAndSettle();
     expect(
       find.byKey(
@@ -483,6 +536,12 @@ void main() {
     addTearDown(tester.view.resetDevicePixelRatio);
     await tester.pumpWidget(MoonkeepApp(store: emptyStore()));
     await tester.pumpAndSettle();
+    expect(find.text('Mehr Zeit füreinander.'), findsNothing);
+    expect(
+      find.text('Euer gemeinsamer Alltag beginnt mit einem guten Überblick.'),
+      findsNothing,
+    );
+    expect(find.textContaining('Alle Mitglieder können Termine'), findsNothing);
     expect(tester.takeException(), isNull);
     await tester.tap(find.text('Woche'));
     await tester.pumpAndSettle();
