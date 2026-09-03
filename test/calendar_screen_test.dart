@@ -407,6 +407,8 @@ void main() {
     );
     expect(tester.getSize(early).height, tester.getSize(timed).height);
     expect(tester.getSize(timed).height, tester.getSize(overlap).height);
+    expect(find.text('02:00 – 03:00\nFrühdienst'), findsOneWidget);
+    expect(find.text('09:00 – 11:00\nBesprechung'), findsOneWidget);
     expect(find.text('06:00'), findsNothing);
     expect(find.text('22:00'), findsNothing);
     expect(

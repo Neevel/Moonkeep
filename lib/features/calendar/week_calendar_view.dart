@@ -191,7 +191,7 @@ class WeekCalendarView extends StatelessWidget {
                         event: event,
                         label: allDay
                             ? '• ${event.title}'
-                            : '${_time(event.start)} ${event.title}',
+                            : '${_time(event.start)} – ${_time(event.end)}\n${event.title}',
                         onTap: () => onEventSelected(event, day),
                       ),
                     ),
