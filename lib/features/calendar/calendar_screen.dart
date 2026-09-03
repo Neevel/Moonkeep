@@ -5,7 +5,11 @@ import 'package:flutter/material.dart';
 import 'calendar_event.dart';
 import 'calendar_repository.dart';
 import 'event_editor.dart';
+import 'month_calendar_view.dart';
 import 'reminder_service.dart';
+import 'week_calendar_view.dart';
+
+enum _CalendarViewMode { month, week }
 
 class CalendarScreen extends StatefulWidget {
   const CalendarScreen({
@@ -29,9 +33,10 @@ class _CalendarScreenState extends State<CalendarScreen> {
   CalendarRepository? _store;
   DateTime _day = DateUtils.dateOnly(DateTime.now());
   DateTime _visibleMonth = DateUtils.dateOnly(DateTime.now());
+  DateTime _visibleWeekStart = _startOfWeek(DateTime.now());
+  _CalendarViewMode _viewMode = _CalendarViewMode.month;
   String? _error;
   bool _busy = false;
-  int _calendarRevision = 0;
   StreamSubscription<CalendarNotice>? _noticeSubscription;
   final Map<String, int> _scheduledRevisions = {};
 
@@ -91,6 +96,29 @@ class _CalendarScreenState extends State<CalendarScreen> {
       ..showSnackBar(SnackBar(content: Text(message)));
   }
 
+  void _selectDay(DateTime day) {
+    final selected = DateUtils.dateOnly(day);
+    setState(() {
+      _day = selected;
+      _visibleMonth = DateTime(selected.year, selected.month);
+      _visibleWeekStart = _startOfWeek(selected);
+    });
+    _store?.selectDay(selected);
+  }
+
+  void _goToday() => _selectDay(DateTime.now());
+
+  void _changeMonth(int offset) {
+    final month = DateTime(_visibleMonth.year, _visibleMonth.month + offset);
+    final lastDay = DateTime(month.year, month.month + 1, 0).day;
+    final selectedDay = _day.day > lastDay ? lastDay : _day.day;
+    _selectDay(DateTime(month.year, month.month, selectedDay));
+  }
+
+  void _changeWeek(int offset) {
+    _selectDay(_day.add(Duration(days: offset * 7)));
+  }
+
   void _syncReminders() {
     final store = _store;
     final reminders = widget.reminders;
@@ -144,6 +172,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
       setState(() {
         _day = DateUtils.dateOnly(saved.start);
         _visibleMonth = DateTime(_day.year, _day.month);
+        _visibleWeekStart = _startOfWeek(_day);
       });
       _store?.selectDay(_day);
       final reminders = widget.reminders;
@@ -247,15 +276,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
                 : () => Navigator.of(context).pushNamed('/account'),
             icon: const Icon(Icons.account_circle_outlined),
           ),
-          TextButton(
-            onPressed: () => setState(() {
-              _day = DateUtils.dateOnly(DateTime.now());
-              _visibleMonth = DateTime(_day.year, _day.month);
-              _calendarRevision++;
-              _store?.selectDay(_day);
-            }),
-            child: const Text('Heute'),
-          ),
+          TextButton(onPressed: _goToday, child: const Text('Heute')),
           const SizedBox(width: 12),
         ],
       ),
@@ -323,46 +344,33 @@ class _CalendarScreenState extends State<CalendarScreen> {
                         ),
                       ),
                       const SizedBox(height: 20),
-                      LayoutBuilder(
-                        builder: (context, constraints) {
-                          final calendar = Card(
-                            child: _MonthCalendar(
-                              key: ValueKey(_calendarRevision),
-                              selectedDay: _day,
-                              visibleMonth: _visibleMonth,
-                              eventsOn: _store!.eventsOn,
-                              onMonthChanged: (month) =>
-                                  setState(() => _visibleMonth = month),
-                              onDaySelected: (day) {
-                                setState(() {
-                                  _day = day;
-                                  _visibleMonth = DateTime(day.year, day.month);
-                                });
-                                _store?.selectDay(day);
-                              },
+                      Align(
+                        alignment: Alignment.center,
+                        child: SegmentedButton<_CalendarViewMode>(
+                          segments: const [
+                            ButtonSegment(
+                              value: _CalendarViewMode.month,
+                              label: Text('Monat'),
+                              icon: Icon(Icons.calendar_view_month_outlined),
                             ),
-                          );
-                          final agenda = _agenda(context);
-                          if (constraints.maxWidth >= 720) {
-                            return Row(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Expanded(child: calendar),
-                                const SizedBox(width: 24),
-                                Expanded(child: agenda),
-                              ],
-                            );
-                          }
-                          return Column(
-                            crossAxisAlignment: CrossAxisAlignment.stretch,
-                            children: [
-                              calendar,
-                              const SizedBox(height: 24),
-                              agenda,
-                            ],
-                          );
-                        },
+                            ButtonSegment(
+                              value: _CalendarViewMode.week,
+                              label: Text('Woche'),
+                              icon: Icon(Icons.calendar_view_week_outlined),
+                            ),
+                          ],
+                          selected: {_viewMode},
+                          onSelectionChanged: (selection) {
+                            setState(() {
+                              _viewMode = selection.single;
+                              _visibleMonth = DateTime(_day.year, _day.month);
+                              _visibleWeekStart = _startOfWeek(_day);
+                            });
+                          },
+                        ),
                       ),
+                      const SizedBox(height: 16),
+                      _calendarAndAgenda(context),
                     ],
                   ),
                 ),
@@ -370,6 +378,50 @@ class _CalendarScreenState extends State<CalendarScreen> {
       ),
     );
   }
+
+  Widget _calendarAndAgenda(BuildContext context) {
+    final Widget calendar;
+    if (_viewMode == _CalendarViewMode.month) {
+      final first = DateTime(_visibleMonth.year, _visibleMonth.month, 1);
+      final gridStart = first.subtract(Duration(days: first.weekday - 1));
+      calendar = MonthCalendarView(
+        visibleMonth: _visibleMonth,
+        selectedDay: _day,
+        eventsByDay: _eventsByDay(gridStart, 42),
+        onPrevious: () => _changeMonth(-1),
+        onNext: () => _changeMonth(1),
+        onDaySelected: _selectDay,
+      );
+    } else {
+      calendar = WeekCalendarView(
+        weekStart: _visibleWeekStart,
+        selectedDay: _day,
+        eventsByDay: _eventsByDay(_visibleWeekStart, 7),
+        onPrevious: () => _changeWeek(-1),
+        onNext: () => _changeWeek(1),
+        onDaySelected: _selectDay,
+        onEventSelected: (event, day) {
+          _selectDay(day);
+          _edit(event);
+        },
+      );
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Card(child: calendar),
+        const SizedBox(height: 20),
+        _agenda(context),
+      ],
+    );
+  }
+
+  Map<DateTime, List<CalendarEvent>> _eventsByDay(DateTime start, int days) => {
+    for (var index = 0; index < days; index++)
+      _dateKey(start.add(Duration(days: index))): _store!.eventsOn(
+        start.add(Duration(days: index)),
+      ),
+  };
 
   Widget _agenda(BuildContext context) {
     final events = _store!.eventsOn(_day);
@@ -464,143 +516,9 @@ class _CalendarScreenState extends State<CalendarScreen> {
       };
 }
 
-class _MonthCalendar extends StatelessWidget {
-  const _MonthCalendar({
-    super.key,
-    required this.selectedDay,
-    required this.visibleMonth,
-    required this.eventsOn,
-    required this.onMonthChanged,
-    required this.onDaySelected,
-  });
-
-  final DateTime selectedDay;
-  final DateTime visibleMonth;
-  final List<CalendarEvent> Function(DateTime day) eventsOn;
-  final ValueChanged<DateTime> onMonthChanged;
-  final ValueChanged<DateTime> onDaySelected;
-
-  @override
-  Widget build(BuildContext context) {
-    final localizations = MaterialLocalizations.of(context);
-    final first = DateTime(visibleMonth.year, visibleMonth.month, 1);
-    final gridStart = first.subtract(Duration(days: first.weekday - 1));
-    final colors = Theme.of(context).colorScheme;
-    return Padding(
-      padding: const EdgeInsets.all(12),
-      child: Column(
-        children: [
-          Row(
-            children: [
-              IconButton(
-                tooltip: localizations.previousMonthTooltip,
-                onPressed: () => onMonthChanged(
-                  DateTime(visibleMonth.year, visibleMonth.month - 1),
-                ),
-                icon: const Icon(Icons.chevron_left),
-              ),
-              Expanded(
-                child: Text(
-                  localizations.formatMonthYear(visibleMonth),
-                  textAlign: TextAlign.center,
-                  style: Theme.of(context).textTheme.titleMedium,
-                ),
-              ),
-              IconButton(
-                tooltip: localizations.nextMonthTooltip,
-                onPressed: () => onMonthChanged(
-                  DateTime(visibleMonth.year, visibleMonth.month + 1),
-                ),
-                icon: const Icon(Icons.chevron_right),
-              ),
-            ],
-          ),
-          Row(
-            children: [
-              for (final label in ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'])
-                Expanded(
-                  child: Padding(
-                    padding: EdgeInsets.symmetric(vertical: 6),
-                    child: Text(label, textAlign: TextAlign.center),
-                  ),
-                ),
-            ],
-          ),
-          for (var week = 0; week < 6; week++)
-            Row(
-              children: [
-                for (var weekday = 0; weekday < 7; weekday++)
-                  Expanded(
-                    child: _dayCell(
-                      context,
-                      gridStart.add(Duration(days: week * 7 + weekday)),
-                      colors,
-                    ),
-                  ),
-              ],
-            ),
-        ],
-      ),
-    );
-  }
-
-  Widget _dayCell(BuildContext context, DateTime day, ColorScheme colors) {
-    final events = eventsOn(day);
-    final selected = DateUtils.isSameDay(day, selectedDay);
-    final inMonth = day.month == visibleMonth.month;
-    final importance =
-        events.any((event) => event.importance == EventImportance.high)
-        ? EventImportance.high
-        : events.any((event) => event.importance == EventImportance.normal)
-        ? EventImportance.normal
-        : EventImportance.low;
-    final markerColor = switch (importance) {
-      EventImportance.high => colors.error,
-      EventImportance.normal => colors.primary,
-      EventImportance.low => colors.outline,
-    };
-    return Semantics(
-      label:
-          '${MaterialLocalizations.of(context).formatFullDate(day)}${events.isEmpty ? '' : ', ${events.length} Termine'}',
-      button: true,
-      selected: selected,
-      child: InkWell(
-        onTap: () => onDaySelected(DateUtils.dateOnly(day)),
-        borderRadius: BorderRadius.circular(24),
-        child: Container(
-          height: 44,
-          margin: const EdgeInsets.all(2),
-          decoration: BoxDecoration(
-            color: selected ? colors.primaryContainer : null,
-            shape: BoxShape.circle,
-          ),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Text(
-                '${day.day}',
-                style: TextStyle(
-                  color: inMonth ? null : colors.outline.withValues(alpha: 0.6),
-                  fontWeight: selected ? FontWeight.bold : null,
-                ),
-              ),
-              const SizedBox(height: 2),
-              SizedBox(
-                width: 6,
-                height: 6,
-                child: events.isEmpty
-                    ? null
-                    : DecoratedBox(
-                        decoration: BoxDecoration(
-                          color: markerColor,
-                          shape: BoxShape.circle,
-                        ),
-                      ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
+DateTime _startOfWeek(DateTime day) {
+  final date = DateUtils.dateOnly(day);
+  return date.subtract(Duration(days: date.weekday - DateTime.monday));
 }
+
+DateTime _dateKey(DateTime day) => DateTime(day.year, day.month, day.day);

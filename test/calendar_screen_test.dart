@@ -11,6 +11,34 @@ void main() {
   CalendarStore emptyStore() =>
       CalendarStore(read: () async => null, write: (_) async {});
 
+  CalendarStore storeWithEvents(List<CalendarEvent> events) => CalendarStore(
+    read: () async =>
+        jsonEncode(events.map((event) => event.toJson()).toList()),
+    write: (_) async {},
+  );
+
+  String dayId(DateTime day) =>
+      '${day.year.toString().padLeft(4, '0')}-${day.month.toString().padLeft(2, '0')}-${day.day.toString().padLeft(2, '0')}';
+
+  CalendarEvent eventAt(
+    String id,
+    String title,
+    DateTime day,
+    int startHour,
+    int endHour, {
+    bool isAllDay = false,
+    EventRecurrence recurrence = EventRecurrence.none,
+    Iterable<String> assignedMemberIds = const [],
+  }) => CalendarEvent(
+    id: id,
+    title: title,
+    start: DateTime(day.year, day.month, day.day, startHour),
+    end: DateTime(day.year, day.month, day.day, endHour),
+    isAllDay: isAllDay,
+    recurrence: recurrence,
+    assignedMemberIds: assignedMemberIds,
+  );
+
   testWidgets('creates, edits, cancels deletion and deletes an event', (
     tester,
   ) async {
@@ -32,6 +60,8 @@ void main() {
     expect(find.text('Picknick'), findsOneWidget);
     expect(find.text('Termin erstellt.'), findsOneWidget);
 
+    await tester.ensureVisible(find.text('Picknick'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Picknick'));
     await tester.pumpAndSettle();
     await tester.enterText(
@@ -242,7 +272,17 @@ void main() {
       tester.element(find.byType(Scaffold).first),
     );
     final today = DateTime.now();
+    final previousMonth = DateTime(today.year, today.month - 1);
     final nextMonth = DateTime(today.year, today.month + 1);
+    await tester.tap(find.byTooltip(localizations.previousMonthTooltip));
+    await tester.pumpAndSettle();
+    expect(
+      find.text(localizations.formatMonthYear(previousMonth)),
+      findsOneWidget,
+    );
+    await tester.tap(find.byTooltip(localizations.nextMonthTooltip));
+    await tester.pumpAndSettle();
+    expect(find.text(localizations.formatMonthYear(today)), findsOneWidget);
     await tester.tap(find.byTooltip(localizations.nextMonthTooltip));
     await tester.pumpAndSettle();
     expect(find.text(localizations.formatMonthYear(nextMonth)), findsOneWidget);
@@ -250,6 +290,154 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text(localizations.formatMonthYear(today)), findsOneWidget);
     expect(find.text(localizations.formatMonthYear(nextMonth)), findsNothing);
+  });
+
+  testWidgets('month grid shows occurrences, all-day events and overflow', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(600, 1200);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final today = DateUtils.dateOnly(DateTime.now());
+    final tomorrow = today.add(const Duration(days: 1));
+    final events = [
+      eventAt('all-day', 'Urlaub', today, 7, 8, isAllDay: true),
+      eventAt(
+        'recurring',
+        'Training',
+        today,
+        8,
+        9,
+        recurrence: EventRecurrence.weekly,
+      ),
+      eventAt('third', 'Arzt', today, 9, 10),
+      eventAt('fourth', 'Kita', today, 10, 11),
+      eventAt('tomorrow', 'Einkaufen', tomorrow, 11, 12),
+    ];
+    await tester.pumpWidget(MoonkeepApp(store: storeWithEvents(events)));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Monat'), findsOneWidget);
+    expect(
+      find.byKey(ValueKey('month-event-all-day-${dayId(today)}')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(ValueKey('month-event-recurring-${dayId(today)}')),
+      findsOneWidget,
+    );
+    expect(find.byKey(ValueKey('month-more-${dayId(today)}')), findsOneWidget);
+    expect(find.text('+2'), findsOneWidget);
+
+    await tester.tap(find.byKey(ValueKey('month-day-${dayId(tomorrow)}')));
+    await tester.pumpAndSettle();
+    expect(find.text('Einkaufen'), findsOneWidget);
+    expect(
+      find.text(
+        MaterialLocalizations.of(tester.element(find.byType(Scaffold).first))
+            .formatFullDate(tomorrow),
+      ),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('week grid places timed, all-day and recurring events', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(600, 1200);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final today = DateUtils.dateOnly(DateTime.now());
+    final weekStart = today.subtract(Duration(days: today.weekday - 1));
+    final tuesday = weekStart.add(const Duration(days: 1));
+    final wednesday = weekStart.add(const Duration(days: 2));
+    final thursday = weekStart.add(const Duration(days: 3));
+    final events = [
+      eventAt('timed', 'Besprechung', tuesday, 9, 11),
+      eventAt('early', 'Frühdienst', tuesday, 2, 3),
+      eventAt(
+        'overlap',
+        'Telefonat',
+        tuesday,
+        10,
+        12,
+        assignedMemberIds: const ['member-a'],
+      ),
+      eventAt('all-day', 'Geburtstag', wednesday, 9, 10, isAllDay: true),
+      eventAt(
+        'recurring',
+        'Training',
+        thursday.subtract(const Duration(days: 7)),
+        18,
+        19,
+        recurrence: EventRecurrence.weekly,
+      ),
+    ];
+    await tester.pumpWidget(
+      MaterialApp(
+        home: CalendarScreen(
+          store: storeWithEvents(events),
+          memberLabels: const {'member-a': 'member@example.test'},
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Woche'));
+    await tester.pumpAndSettle();
+
+    for (var index = 0; index < 7; index++) {
+      expect(
+        find.byKey(
+          ValueKey('week-day-${dayId(weekStart.add(Duration(days: index)))}'),
+        ),
+        findsOneWidget,
+      );
+    }
+    final first = tester.widget<Positioned>(
+      find.byKey(ValueKey('week-event-timed-${dayId(tuesday)}')),
+    );
+    final second = tester.widget<Positioned>(
+      find.byKey(ValueKey('week-event-overlap-${dayId(tuesday)}')),
+    );
+    expect(first.left, isNot(second.left));
+    expect(
+      find.byKey(ValueKey('week-event-early-${dayId(tuesday)}')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(ValueKey('week-all-day-all-day-${dayId(wednesday)}')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(ValueKey('week-event-recurring-${dayId(thursday)}')),
+      findsOneWidget,
+    );
+    expect(tester.takeException(), isNull);
+
+    await tester.tap(find.byTooltip('Nächste Woche'));
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(
+        ValueKey('week-day-${dayId(weekStart.add(const Duration(days: 7)))}'),
+      ),
+      findsOneWidget,
+    );
+    await tester.tap(find.byTooltip('Vorherige Woche'));
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(ValueKey('week-day-${dayId(weekStart)}')),
+      findsOneWidget,
+    );
+    await tester.tap(find.byTooltip('Nächste Woche'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Heute'));
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(ValueKey('week-day-${dayId(weekStart)}')),
+      findsOneWidget,
+    );
   });
 
   testWidgets('calendar and editor fit a narrow phone viewport', (
@@ -262,6 +450,11 @@ void main() {
     await tester.pumpWidget(MoonkeepApp(store: emptyStore()));
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
+    await tester.tap(find.text('Woche'));
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+    await tester.tap(find.text('Monat'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Termin anlegen'));
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
