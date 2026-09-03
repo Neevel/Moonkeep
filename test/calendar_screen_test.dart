@@ -342,7 +342,7 @@ void main() {
     );
   });
 
-  testWidgets('week grid places timed, all-day and recurring events', (
+  testWidgets('week grid lists equal-height events chronologically', (
     tester,
   ) async {
     tester.view.physicalSize = const Size(600, 1200);
@@ -395,17 +395,20 @@ void main() {
         findsOneWidget,
       );
     }
-    final first = tester.widget<Positioned>(
-      find.byKey(ValueKey('week-event-timed-${dayId(tuesday)}')),
+    final early = find.byKey(ValueKey('week-event-early-${dayId(tuesday)}'));
+    final timed = find.byKey(ValueKey('week-event-timed-${dayId(tuesday)}'));
+    final overlap = find.byKey(
+      ValueKey('week-event-overlap-${dayId(tuesday)}'),
     );
-    final second = tester.widget<Positioned>(
-      find.byKey(ValueKey('week-event-overlap-${dayId(tuesday)}')),
-    );
-    expect(first.left, isNot(second.left));
+    expect(tester.getTopLeft(early).dy, lessThan(tester.getTopLeft(timed).dy));
     expect(
-      find.byKey(ValueKey('week-event-early-${dayId(tuesday)}')),
-      findsOneWidget,
+      tester.getTopLeft(timed).dy,
+      lessThan(tester.getTopLeft(overlap).dy),
     );
+    expect(tester.getSize(early).height, tester.getSize(timed).height);
+    expect(tester.getSize(timed).height, tester.getSize(overlap).height);
+    expect(find.text('06:00'), findsNothing);
+    expect(find.text('22:00'), findsNothing);
     expect(
       find.byKey(ValueKey('week-all-day-all-day-${dayId(wednesday)}')),
       findsOneWidget,
