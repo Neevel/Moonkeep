@@ -42,7 +42,7 @@ class WeekCalendarView extends StatelessWidget {
         .map((day) => _timedEvents(day).length)
         .fold<int>(0, math.max);
     final allDayHeight = _rowHeight(allDayCount, emptyHeight: 0);
-    final timedHeight = _rowHeight(timedCount, emptyHeight: 64);
+    final timedHeight = _rowHeight(timedCount, emptyHeight: 300);
 
     return Padding(
       padding: const EdgeInsets.all(10),
@@ -71,30 +71,45 @@ class WeekCalendarView extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 4),
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: SizedBox(
-              width: 7 * _dayWidth,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _headers(context, days),
-                  if (allDayCount > 0) ...[
-                    const Padding(
-                      padding: EdgeInsets.fromLTRB(4, 4, 4, 3),
-                      child: Text(
-                        'Ganztägig',
-                        style: TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w600,
+          Semantics(
+            label: 'Wochenkalender. Nach oben für die nächste, nach unten für die vorherige Woche wischen.',
+            child: GestureDetector(
+              key: const ValueKey('week-swipe-area'),
+              behavior: HitTestBehavior.opaque,
+              onVerticalDragEnd: (details) {
+                final velocity = details.primaryVelocity ?? 0;
+                if (velocity < -250) {
+                  onNext();
+                } else if (velocity > 250) {
+                  onPrevious();
+                }
+              },
+              child: SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: SizedBox(
+                  width: 7 * _dayWidth,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _headers(context, days),
+                      if (allDayCount > 0) ...[
+                        const Padding(
+                          padding: EdgeInsets.fromLTRB(4, 4, 4, 3),
+                          child: Text(
+                            'Ganztägig',
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
                         ),
-                      ),
-                    ),
-                    _eventRow(context, days, allDayHeight, allDay: true),
-                    const SizedBox(height: 6),
-                  ],
-                  _eventRow(context, days, timedHeight, allDay: false),
-                ],
+                        _eventRow(context, days, allDayHeight, allDay: true),
+                        const SizedBox(height: 6),
+                      ],
+                      _eventRow(context, days, timedHeight, allDay: false),
+                    ],
+                  ),
+                ),
               ),
             ),
           ),

@@ -407,6 +407,12 @@ void main() {
     );
     expect(tester.getSize(early).height, tester.getSize(timed).height);
     expect(tester.getSize(timed).height, tester.getSize(overlap).height);
+    expect(
+      tester
+          .getSize(find.byKey(ValueKey('week-timeline-${dayId(tuesday)}')))
+          .height,
+      greaterThanOrEqualTo(300),
+    );
     expect(find.text('02:00 – 03:00\nFrühdienst'), findsOneWidget);
     expect(find.text('09:00 – 11:00\nBesprechung'), findsOneWidget);
     expect(find.text('06:00'), findsNothing);
@@ -420,6 +426,29 @@ void main() {
       findsOneWidget,
     );
     expect(tester.takeException(), isNull);
+
+    await tester.fling(
+      find.byKey(const ValueKey('week-swipe-area')),
+      const Offset(0, -300),
+      1000,
+    );
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(
+        ValueKey('week-day-${dayId(weekStart.add(const Duration(days: 7)))}'),
+      ),
+      findsOneWidget,
+    );
+    await tester.fling(
+      find.byKey(const ValueKey('week-swipe-area')),
+      const Offset(0, 300),
+      1000,
+    );
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(ValueKey('week-day-${dayId(weekStart)}')),
+      findsOneWidget,
+    );
 
     await tester.tap(find.byTooltip('Nächste Woche'));
     await tester.pumpAndSettle();
