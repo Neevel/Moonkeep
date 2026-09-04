@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'calendar_event.dart';
+import 'member_color_resolver.dart';
 
 class MonthCalendarView extends StatelessWidget {
   const MonthCalendarView({
@@ -8,6 +9,7 @@ class MonthCalendarView extends StatelessWidget {
     required this.visibleMonth,
     required this.selectedDay,
     required this.eventsByDay,
+    required this.memberLabels,
     required this.onPrevious,
     required this.onNext,
     required this.onDaySelected,
@@ -16,6 +18,7 @@ class MonthCalendarView extends StatelessWidget {
   final DateTime visibleMonth;
   final DateTime selectedDay;
   final Map<DateTime, List<CalendarEvent>> eventsByDay;
+  final Map<String, String> memberLabels;
   final VoidCallback onPrevious;
   final VoidCallback onNext;
   final ValueChanged<DateTime> onDaySelected;
@@ -91,6 +94,7 @@ class MonthCalendarView extends StatelessWidget {
                               gridStart.add(Duration(days: week * 7 + weekday)),
                             )] ??
                             const [],
+                        memberLabels: memberLabels,
                         onSelected: onDaySelected,
                       ),
                     ),
@@ -109,6 +113,7 @@ class _MonthDayCell extends StatelessWidget {
     required this.visibleMonth,
     required this.selectedDay,
     required this.events,
+    required this.memberLabels,
     required this.onSelected,
   });
 
@@ -116,6 +121,7 @@ class _MonthDayCell extends StatelessWidget {
   final DateTime visibleMonth;
   final DateTime selectedDay;
   final List<CalendarEvent> events;
+  final Map<String, String> memberLabels;
   final ValueChanged<DateTime> onSelected;
 
   @override
@@ -166,34 +172,10 @@ class _MonthDayCell extends StatelessWidget {
               ),
               const SizedBox(height: 3),
               for (var index = 0; index < visibleEvents.length; index++)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 2),
-                  child: Container(
-                    key: ValueKey(
-                      'month-event-${visibleEvents[index].id}-${_dayId(day)}',
-                    ),
-                    height: 15,
-                    padding: const EdgeInsets.symmetric(horizontal: 2),
-                    decoration: BoxDecoration(
-                      color: _eventColor(
-                        colors,
-                        visibleEvents[index],
-                      ).withValues(alpha: 0.18),
-                      borderRadius: BorderRadius.circular(4),
-                    ),
-                    alignment: Alignment.centerLeft,
-                    child: Text(
-                      visibleEvents[index].title,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontSize: 10,
-                        height: 1,
-                        color: _eventColor(colors, visibleEvents[index]),
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ),
+                _MonthEventChip(
+                  event: visibleEvents[index],
+                  day: day,
+                  memberLabels: memberLabels,
                 ),
               if (events.length > visibleEvents.length)
                 Text(
@@ -215,7 +197,84 @@ class _MonthDayCell extends StatelessWidget {
   }
 }
 
-Color _eventColor(ColorScheme colors, CalendarEvent event) =>
+class _MonthEventChip extends StatelessWidget {
+  const _MonthEventChip({
+    required this.event,
+    required this.day,
+    required this.memberLabels,
+  });
+
+  final CalendarEvent event;
+  final DateTime day;
+  final Map<String, String> memberLabels;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    final audience = MemberColorResolver.forEvent(event, memberLabels);
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 2),
+      child: Container(
+        key: ValueKey('month-event-${event.id}-${_dayId(day)}'),
+        height: 15,
+        padding: const EdgeInsets.only(right: 2),
+        decoration: BoxDecoration(
+          color: audience.background,
+          borderRadius: BorderRadius.circular(4),
+          border: Border(
+            left: BorderSide(color: _importanceColor(colors, event), width: 2),
+          ),
+        ),
+        child: Row(
+          children: [
+            if (audience.kind == CalendarAudienceKind.multiple)
+              Padding(
+                padding: const EdgeInsets.only(left: 2, right: 2),
+                child: _ColorDots(colors: audience.indicatorColors),
+              )
+            else
+              const SizedBox(width: 2),
+            Expanded(
+              child: Text(
+                event.title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 10,
+                  height: 1,
+                  color: audience.foreground,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ColorDots extends StatelessWidget {
+  const _ColorDots({required this.colors});
+
+  final List<Color> colors;
+
+  @override
+  Widget build(BuildContext context) => Row(
+    mainAxisSize: MainAxisSize.min,
+    children: [
+      for (final color in colors.take(3))
+        Container(
+          width: 3,
+          height: 3,
+          margin: const EdgeInsets.only(right: 1),
+          decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+        ),
+    ],
+  );
+}
+
+Color _importanceColor(ColorScheme colors, CalendarEvent event) =>
     switch (event.importance) {
       EventImportance.high => colors.error,
       EventImportance.normal => colors.primary,

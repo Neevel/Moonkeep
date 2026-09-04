@@ -6,6 +6,7 @@ import 'package:moonkeep/app.dart';
 import 'package:moonkeep/features/calendar/calendar_event.dart';
 import 'package:moonkeep/features/calendar/calendar_screen.dart';
 import 'package:moonkeep/features/calendar/calendar_store.dart';
+import 'package:moonkeep/features/calendar/member_color_resolver.dart';
 
 void main() {
   CalendarStore emptyStore() =>
@@ -31,6 +32,7 @@ void main() {
     int endHour, {
     bool isAllDay = false,
     EventRecurrence recurrence = EventRecurrence.none,
+    EventImportance importance = EventImportance.normal,
     Iterable<String> assignedMemberIds = const [],
   }) => CalendarEvent(
     id: id,
@@ -39,7 +41,64 @@ void main() {
     end: DateTime(day.year, day.month, day.day, endHour),
     isAllDay: isAllDay,
     recurrence: recurrence,
+    importance: importance,
     assignedMemberIds: assignedMemberIds,
+  );
+
+  test(
+    'member colors are deterministic and audience variants stay distinct',
+    () {
+      final memberA = MemberColorResolver.forMemberId('member-a');
+      final memberAAgain = MemberColorResolver.forMemberId('member-a');
+      final memberB = MemberColorResolver.forMemberId('member-b');
+      expect(memberA.background, memberAAgain.background);
+      expect(memberA.foreground, memberAAgain.foreground);
+      expect(memberA.background, isNot(memberB.background));
+
+      final day = DateTime(2026, 9, 4);
+      final all = MemberColorResolver.forEvent(
+        eventAt('all', 'Alle', day, 8, 9),
+        const {'member-a': 'a@example.test'},
+      );
+      final single = MemberColorResolver.forEvent(
+        eventAt(
+          'single',
+          'Person',
+          day,
+          8,
+          9,
+          assignedMemberIds: const ['member-a'],
+        ),
+        const {'member-a': 'a@example.test'},
+      );
+      final multiple = MemberColorResolver.forEvent(
+        eventAt(
+          'multiple',
+          'Mehrere',
+          day,
+          8,
+          9,
+          assignedMemberIds: const ['member-a', 'member-b'],
+        ),
+        const {'member-a': 'a@example.test', 'member-b': 'b@example.test'},
+      );
+      final unknown = MemberColorResolver.forEvent(
+        eventAt(
+          'unknown',
+          'Ehemalig',
+          day,
+          8,
+          9,
+          assignedMemberIds: const ['former-member'],
+        ),
+        const {},
+      );
+      expect(all, same(MemberColorResolver.all));
+      expect(all.background, isNot(single.background));
+      expect(multiple.kind, CalendarAudienceKind.multiple);
+      expect(multiple.indicatorColors, hasLength(2));
+      expect(unknown, same(MemberColorResolver.unknown));
+    },
   );
 
   testWidgets('creates, edits, cancels deletion and deletes an event', (
@@ -335,12 +394,23 @@ void main() {
         8,
         9,
         recurrence: EventRecurrence.weekly,
+        assignedMemberIds: const ['member-a'],
       ),
       eventAt('third', 'Arzt', today, 9, 10),
       eventAt('fourth', 'Kita', today, 10, 11),
       eventAt('tomorrow', 'Einkaufen', tomorrow, 11, 12),
     ];
-    await tester.pumpWidget(MoonkeepApp(store: storeWithEvents(events)));
+    await tester.pumpWidget(
+      MaterialApp(
+        home: CalendarScreen(
+          store: storeWithEvents(events),
+          memberLabels: const {
+            'member-a': 'marcel@example.test',
+            'member-b': 'claire@example.test',
+          },
+        ),
+      ),
+    );
     await tester.pumpAndSettle();
 
     expect(find.text('Monat'), findsOneWidget);
@@ -356,6 +426,25 @@ void main() {
       findsOneWidget,
     );
     expect(find.text('• Urlaub'), findsNothing);
+    final allDayDecoration =
+        tester
+                .widget<Container>(
+                  find.byKey(ValueKey('month-event-all-day-${dayId(today)}')),
+                )
+                .decoration
+            as BoxDecoration;
+    final memberDecoration =
+        tester
+                .widget<Container>(
+                  find.byKey(ValueKey('month-event-recurring-${dayId(today)}')),
+                )
+                .decoration
+            as BoxDecoration;
+    expect(allDayDecoration.color, MemberColorResolver.all.background);
+    expect(
+      memberDecoration.color,
+      MemberColorResolver.forMemberId('member-a').background,
+    );
     expect(
       find.byKey(ValueKey('month-event-recurring-${dayId(today)}')),
       findsOneWidget,
@@ -388,16 +477,32 @@ void main() {
     final wednesday = weekStart.add(const Duration(days: 2));
     final thursday = weekStart.add(const Duration(days: 3));
     final events = [
-      eventAt('all-day-tuesday', 'Geburtstag', tuesday, 9, 10, isAllDay: true),
+      eventAt(
+        'all-day-tuesday',
+        'Geburtstag',
+        tuesday,
+        9,
+        10,
+        isAllDay: true,
+        assignedMemberIds: const ['member-a'],
+      ),
       eventAt('timed', 'Besprechung', tuesday, 9, 11),
-      eventAt('early', 'Frühdienst', tuesday, 2, 3),
+      eventAt(
+        'early',
+        'Frühdienst',
+        tuesday,
+        2,
+        3,
+        assignedMemberIds: const ['member-b'],
+      ),
       eventAt(
         'overlap',
         'Telefonat',
         tuesday,
         10,
         12,
-        assignedMemberIds: const ['member-a'],
+        importance: EventImportance.high,
+        assignedMemberIds: const ['member-a', 'member-b'],
       ),
       eventAt('all-day', 'Urlaub', wednesday, 9, 10, isAllDay: true),
       eventAt(
@@ -407,13 +512,17 @@ void main() {
         18,
         19,
         recurrence: EventRecurrence.weekly,
+        assignedMemberIds: const ['member-a'],
       ),
     ];
     await tester.pumpWidget(
       MaterialApp(
         home: CalendarScreen(
           store: storeWithEvents(events),
-          memberLabels: const {'member-a': 'member@example.test'},
+          memberLabels: const {
+            'member-a': 'marcel@example.test',
+            'member-b': 'claire@example.test',
+          },
         ),
       ),
     );
@@ -474,6 +583,51 @@ void main() {
     expect(find.text('Frühdienst'), findsOneWidget);
     expect(find.text('09:00'), findsOneWidget);
     expect(find.text('Besprechung'), findsOneWidget);
+    Material eventMaterial(Finder eventFinder) => tester.widget<Material>(
+      find.descendant(of: eventFinder, matching: find.byType(Material)).first,
+    );
+    expect(
+      eventMaterial(allDay).color,
+      MemberColorResolver.forMemberId('member-a').background,
+    );
+    expect(
+      eventMaterial(early).color,
+      MemberColorResolver.forMemberId('member-b').background,
+    );
+    expect(find.byKey(const ValueKey('week-multiple-overlap')), findsOneWidget);
+    final multipleAudience = MemberColorResolver.forEvent(
+      events.firstWhere((event) => event.id == 'overlap'),
+      const {
+        'member-a': 'marcel@example.test',
+        'member-b': 'claire@example.test',
+      },
+    );
+    expect(eventMaterial(overlap).color, multipleAudience.background);
+    expect(
+      eventMaterial(overlap).color,
+      isNot(MemberColorResolver.forMemberId('member-a').background),
+    );
+    final recurring = find.byKey(
+      ValueKey('week-event-recurring-${dayId(thursday)}'),
+    );
+    expect(
+      eventMaterial(recurring).color,
+      MemberColorResolver.forMemberId('member-a').background,
+    );
+    final importanceDecoration =
+        tester
+                .widget<Container>(
+                  find
+                      .descendant(of: overlap, matching: find.byType(Container))
+                      .first,
+                )
+                .decoration
+            as BoxDecoration;
+    final importanceBorder = importanceDecoration.border! as Border;
+    expect(
+      importanceBorder.left.color,
+      Theme.of(tester.element(overlap)).colorScheme.error,
+    );
     expect(find.text('06:00'), findsNothing);
     expect(find.text('22:00'), findsNothing);
     expect(
@@ -627,6 +781,20 @@ void main() {
 
     expect(store.allEvents.single.assignedMemberIds, {'member-a'});
     expect(find.textContaining('Betrifft: marcel@example.com'), findsOneWidget);
+    expect(find.byKey(const ValueKey('member-color-legend')), findsOneWidget);
+    expect(find.text('marcel'), findsOneWidget);
+    expect(find.text('claire'), findsOneWidget);
+    final agendaAudience = find.descendant(
+      of: find.byKey(ValueKey('agenda-audience-${store.allEvents.single.id}')),
+      matching: find.byType(Container),
+    );
+    final agendaDecoration =
+        tester.widget<Container>(agendaAudience.first).decoration
+            as BoxDecoration;
+    expect(
+      agendaDecoration.color,
+      MemberColorResolver.forMemberId('member-a').background,
+    );
 
     await tester.tap(agendaTile('Planung'));
     await tester.pumpAndSettle();
@@ -668,6 +836,14 @@ void main() {
       find.textContaining('Betrifft: Ehemaliges Mitglied'),
       findsOneWidget,
     );
+    final unknownAudience = find.descendant(
+      of: find.byKey(const ValueKey('agenda-audience-historic')),
+      matching: find.byType(Container),
+    );
+    final unknownDecoration =
+        tester.widget<Container>(unknownAudience.first).decoration
+            as BoxDecoration;
+    expect(unknownDecoration.color, MemberColorResolver.unknown.background);
     expect(tester.takeException(), isNull);
   });
 }

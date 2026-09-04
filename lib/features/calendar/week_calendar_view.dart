@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'calendar_event.dart';
+import 'member_color_resolver.dart';
 
 class WeekCalendarView extends StatelessWidget {
   const WeekCalendarView({
@@ -8,6 +9,7 @@ class WeekCalendarView extends StatelessWidget {
     required this.weekStart,
     required this.selectedDay,
     required this.eventsByDay,
+    required this.memberLabels,
     required this.onPrevious,
     required this.onNext,
     required this.onDaySelected,
@@ -17,6 +19,7 @@ class WeekCalendarView extends StatelessWidget {
   final DateTime weekStart;
   final DateTime selectedDay;
   final Map<DateTime, List<CalendarEvent>> eventsByDay;
+  final Map<String, String> memberLabels;
   final VoidCallback onPrevious;
   final VoidCallback onNext;
   final ValueChanged<DateTime> onDaySelected;
@@ -73,6 +76,7 @@ class WeekCalendarView extends StatelessWidget {
                 day: day,
                 selected: DateUtils.isSameDay(day, selectedDay),
                 events: _events(day),
+                memberLabels: memberLabels,
                 onDaySelected: onDaySelected,
                 onEventSelected: onEventSelected,
               ),
@@ -91,6 +95,7 @@ class _WeekDaySection extends StatelessWidget {
     required this.day,
     required this.selected,
     required this.events,
+    required this.memberLabels,
     required this.onDaySelected,
     required this.onEventSelected,
   });
@@ -100,6 +105,7 @@ class _WeekDaySection extends StatelessWidget {
   final DateTime day;
   final bool selected;
   final List<CalendarEvent> events;
+  final Map<String, String> memberLabels;
   final ValueChanged<DateTime> onDaySelected;
   final void Function(CalendarEvent event, DateTime day) onEventSelected;
 
@@ -170,12 +176,14 @@ class _WeekDaySection extends StatelessWidget {
                               _event(
                                 event,
                                 timeLabel: 'Ganztägig',
+                                memberLabels: memberLabels,
                                 key: 'week-all-day-${event.id}-${_dayId(day)}',
                               ),
                             for (final event in timed)
                               _event(
                                 event,
                                 timeLabel: _time(event.start),
+                                memberLabels: memberLabels,
                                 key: 'week-event-${event.id}-${_dayId(day)}',
                               ),
                           ],
@@ -192,6 +200,7 @@ class _WeekDaySection extends StatelessWidget {
   Widget _event(
     CalendarEvent event, {
     required String timeLabel,
+    required Map<String, String> memberLabels,
     required String key,
   }) => Padding(
     padding: const EdgeInsets.only(bottom: 3),
@@ -199,6 +208,7 @@ class _WeekDaySection extends StatelessWidget {
       key: ValueKey(key),
       event: event,
       timeLabel: timeLabel,
+      memberLabels: memberLabels,
       onTap: () => onEventSelected(event, day),
     ),
   );
@@ -209,11 +219,13 @@ class _CompactEvent extends StatelessWidget {
     super.key,
     required this.event,
     required this.timeLabel,
+    required this.memberLabels,
     required this.onTap,
   });
 
   final CalendarEvent event;
   final String timeLabel;
+  final Map<String, String> memberLabels;
   final VoidCallback onTap;
 
   @override
@@ -224,13 +236,18 @@ class _CompactEvent extends StatelessWidget {
       EventImportance.normal => colors.primary,
       EventImportance.low => colors.outline,
     };
+    final audience = MemberColorResolver.forEvent(event, memberLabels);
     return Material(
-      color: color.withValues(alpha: 0.18),
+      color: audience.background,
       borderRadius: BorderRadius.circular(6),
       child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(6),
-        child: Padding(
+        child: Container(
+          decoration: BoxDecoration(
+            border: Border(left: BorderSide(color: color, width: 3)),
+            borderRadius: BorderRadius.circular(6),
+          ),
           padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 5),
           child: Row(
             children: [
@@ -240,19 +257,25 @@ class _CompactEvent extends StatelessWidget {
                   timeLabel,
                   maxLines: 1,
                   style: TextStyle(
-                    color: color,
+                    color: audience.foreground,
                     fontSize: 11,
                     fontWeight: FontWeight.w700,
                   ),
                 ),
               ),
+              if (audience.kind == CalendarAudienceKind.multiple)
+                Padding(
+                  key: ValueKey('week-multiple-${event.id}'),
+                  padding: const EdgeInsets.only(right: 5),
+                  child: _ColorDots(colors: audience.indicatorColors),
+                ),
               Expanded(
                 child: Text(
                   event.title,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
-                    color: color,
+                    color: audience.foreground,
                     fontSize: 12,
                     fontWeight: FontWeight.w600,
                   ),
@@ -264,6 +287,26 @@ class _CompactEvent extends StatelessWidget {
       ),
     );
   }
+}
+
+class _ColorDots extends StatelessWidget {
+  const _ColorDots({required this.colors});
+
+  final List<Color> colors;
+
+  @override
+  Widget build(BuildContext context) => Row(
+    mainAxisSize: MainAxisSize.min,
+    children: [
+      for (final color in colors.take(3))
+        Container(
+          width: 6,
+          height: 6,
+          margin: const EdgeInsets.only(right: 2),
+          decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+        ),
+    ],
+  );
 }
 
 String _weekday(int weekday) =>

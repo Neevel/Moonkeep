@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'calendar_event.dart';
 import 'calendar_repository.dart';
 import 'event_editor.dart';
+import 'member_color_resolver.dart';
 import 'month_calendar_view.dart';
 import 'reminder_service.dart';
 import 'week_calendar_view.dart';
@@ -363,6 +364,10 @@ class _CalendarScreenState extends State<CalendarScreen> {
                           },
                         ),
                       ),
+                      if (widget.memberLabels.isNotEmpty) ...[
+                        const SizedBox(height: 4),
+                        _memberLegend(),
+                      ],
                       const SizedBox(height: 8),
                       _calendarAndAgenda(context),
                     ],
@@ -383,6 +388,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
         visibleMonth: _visibleMonth,
         selectedDay: _day,
         eventsByDay: _eventsByDay(gridStart, 42),
+        memberLabels: widget.memberLabels,
         onPrevious: () => _changeMonth(-1),
         onNext: () => _changeMonth(1),
         onDaySelected: (day) {
@@ -397,6 +403,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
         weekStart: _visibleWeekStart,
         selectedDay: _day,
         eventsByDay: _eventsByDay(_visibleWeekStart, 7),
+        memberLabels: widget.memberLabels,
         onPrevious: () => _changeWeek(-1),
         onNext: () => _changeWeek(1),
         onDaySelected: _selectDay,
@@ -497,13 +504,18 @@ class _CalendarScreenState extends State<CalendarScreen> {
             child: ListTile(
               contentPadding: const EdgeInsets.fromLTRB(16, 8, 8, 8),
               title: Text(event.title),
-              leading: Icon(
-                event.importance == EventImportance.high
+              leading: _AgendaAudienceMarker(
+                key: ValueKey('agenda-audience-${event.id}'),
+                audience: MemberColorResolver.forEvent(
+                  event,
+                  widget.memberLabels,
+                ),
+                importanceColor: _importanceColor(context, event.importance),
+                icon: event.importance == EventImportance.high
                     ? Icons.priority_high
                     : event.importance == EventImportance.low
                     ? Icons.low_priority
                     : Icons.event_outlined,
-                color: _importanceColor(context, event.importance),
               ),
               subtitle: Text(
                 '${event.isAllDay ? 'Ganztägig' : '${TimeOfDay.fromDateTime(event.start).format(context)} – ${TimeOfDay.fromDateTime(event.end).format(context)}'}'
@@ -533,12 +545,132 @@ class _CalendarScreenState extends State<CalendarScreen> {
     return labels.join(', ');
   }
 
+  Widget _memberLegend() {
+    final entries = widget.memberLabels.entries.toList()
+      ..sort(
+        (a, b) =>
+            _shortMemberLabel(a.value).compareTo(_shortMemberLabel(b.value)),
+      );
+    return SizedBox(
+      height: 28,
+      child: ListView(
+        key: const ValueKey('member-color-legend'),
+        scrollDirection: Axis.horizontal,
+        children: [
+          const _LegendItem(label: 'Alle', audience: MemberColorResolver.all),
+          for (final entry in entries)
+            _LegendItem(
+              label: _shortMemberLabel(entry.value),
+              audience: MemberColorResolver.forMemberId(entry.key),
+            ),
+        ],
+      ),
+    );
+  }
+
   Color _importanceColor(BuildContext context, EventImportance importance) =>
       switch (importance) {
         EventImportance.high => Theme.of(context).colorScheme.error,
         EventImportance.normal => Theme.of(context).colorScheme.primary,
         EventImportance.low => Theme.of(context).colorScheme.outline,
       };
+}
+
+class _AgendaAudienceMarker extends StatelessWidget {
+  const _AgendaAudienceMarker({
+    super.key,
+    required this.audience,
+    required this.importanceColor,
+    required this.icon,
+  });
+
+  final CalendarAudienceStyle audience;
+  final Color importanceColor;
+  final IconData icon;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    width: 40,
+    height: 40,
+    decoration: BoxDecoration(
+      color: audience.background,
+      shape: BoxShape.circle,
+      border: Border.all(color: importanceColor, width: 2),
+    ),
+    child: Stack(
+      alignment: Alignment.center,
+      children: [
+        Icon(icon, color: importanceColor, size: 21),
+        if (audience.kind == CalendarAudienceKind.multiple)
+          Positioned(
+            bottom: 3,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                for (final color in audience.indicatorColors.take(3))
+                  Container(
+                    width: 5,
+                    height: 5,
+                    margin: const EdgeInsets.symmetric(horizontal: 1),
+                    decoration: BoxDecoration(
+                      color: color,
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+              ],
+            ),
+          ),
+      ],
+    ),
+  );
+}
+
+class _LegendItem extends StatelessWidget {
+  const _LegendItem({required this.label, required this.audience});
+
+  final String label;
+  final CalendarAudienceStyle audience;
+
+  @override
+  Widget build(BuildContext context) => Semantics(
+    label: 'Farbe für $label',
+    child: Container(
+      margin: const EdgeInsets.only(right: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 8),
+      decoration: BoxDecoration(
+        color: audience.background,
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 8,
+            height: 8,
+            decoration: BoxDecoration(
+              color: audience.foreground,
+              shape: BoxShape.circle,
+            ),
+          ),
+          const SizedBox(width: 5),
+          Text(
+            label,
+            maxLines: 1,
+            style: TextStyle(
+              color: audience.foreground,
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
+}
+
+String _shortMemberLabel(String label) {
+  final at = label.indexOf('@');
+  return at > 0 ? label.substring(0, at) : label;
 }
 
 DateTime _startOfWeek(DateTime day) {
