@@ -4,6 +4,44 @@ import 'package:timezone/timezone.dart' as tz;
 
 import 'calendar_event.dart';
 
+tz.TZDateTime? reminderDateTime(CalendarEvent event, {required bool shared}) {
+  if (event.isAllDay || event.reminderOffset == ReminderOffset.none) {
+    return null;
+  }
+  final start = shared
+      ? tz.TZDateTime(
+          tz.getLocation('Europe/Berlin'),
+          event.start.year,
+          event.start.month,
+          event.start.day,
+          event.start.hour,
+          event.start.minute,
+        )
+      : tz.TZDateTime.from(event.start.toUtc(), tz.UTC);
+  if (event.reminderOffset == ReminderOffset.days1) {
+    return tz.TZDateTime(
+      start.location,
+      start.year,
+      start.month,
+      start.day - 1,
+      start.hour,
+      start.minute,
+    );
+  }
+  return start.subtract(Duration(minutes: event.reminderOffset.minutesBefore!));
+}
+
+tz.TZDateTime? schedulableReminderDateTime(
+  CalendarEvent event, {
+  required bool shared,
+  tz.TZDateTime? now,
+}) {
+  final scheduled = reminderDateTime(event, shared: shared);
+  if (scheduled == null) return null;
+  final current = now ?? tz.TZDateTime.now(scheduled.location);
+  return scheduled.isAfter(current) ? scheduled : null;
+}
+
 abstract interface class ReminderService {
   Future<bool> requestPermission();
   Future<void> schedule(CalendarEvent event, {required bool shared});
@@ -62,24 +100,13 @@ class LocalReminderService implements ReminderService {
   @override
   Future<void> schedule(CalendarEvent event, {required bool shared}) async {
     await cancel(event.id);
-    if (event.isAllDay) return;
-    final minutes = event.reminderMinutesBefore;
-    if (minutes == null) return;
-    final start = shared
-        ? tz.TZDateTime(
-            tz.getLocation('Europe/Berlin'),
-            event.start.year,
-            event.start.month,
-            event.start.day,
-            event.start.hour,
-            event.start.minute,
-          )
-        : tz.TZDateTime.from(event.start.toUtc(), tz.UTC);
-    final scheduled = start.subtract(Duration(minutes: minutes));
-    if (!scheduled.isAfter(tz.TZDateTime.now(scheduled.location))) return;
+    final scheduled = schedulableReminderDateTime(event, shared: shared);
+    if (scheduled == null) return;
     await _plugin.zonedSchedule(
       id: _notificationId(event.id),
-      title: minutes == 0 ? 'Termin beginnt jetzt' : 'Termin steht bevor',
+      title: event.reminderOffset == ReminderOffset.atStart
+          ? 'Termin beginnt jetzt'
+          : 'Termin steht bevor',
       body: event.title,
       scheduledDate: scheduled,
       notificationDetails: _details,

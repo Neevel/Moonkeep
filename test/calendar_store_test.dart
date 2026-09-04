@@ -78,7 +78,7 @@ void main() {
       isAllDay: true,
     );
     expect(event.occursOn(DateTime(2026, 9, 14)), isTrue);
-    expect(event.reminderMinutesBefore, isNull);
+    expect(event.reminderOffset, ReminderOffset.none);
   });
 
   test('round-trips a complete event', () {
@@ -89,14 +89,39 @@ void main() {
       end: DateTime(2026, 8, 28, 10),
       notes: 'Picknick mitbringen',
       importance: EventImportance.high,
-      reminderMinutesBefore: 30,
+      reminderOffset: ReminderOffset.minutes30,
     );
     final restored = CalendarEvent.fromJson(
       jsonDecode(jsonEncode(original.toJson())) as Map<String, dynamic>,
     );
     expect(restored.toJson(), original.toJson());
     expect(restored.importance, EventImportance.high);
-    expect(restored.reminderMinutesBefore, 30);
+    expect(restored.reminderOffset, ReminderOffset.minutes30);
+  });
+
+  test('reminder offsets are typed and old values stay compatible', () {
+    expect(ReminderOffset.editorValues, [
+      ReminderOffset.none,
+      ReminderOffset.atStart,
+      ReminderOffset.minutes15,
+      ReminderOffset.minutes30,
+      ReminderOffset.hours1,
+      ReminderOffset.days1,
+    ]);
+    expect(ReminderOffset.fromMinutes(10), ReminderOffset.legacyMinutes10);
+    for (final offset in ReminderOffset.values) {
+      final original = CalendarEvent(
+        id: offset.name,
+        title: offset.label,
+        start: DateTime(2026, 9, 1, 18),
+        end: DateTime(2026, 9, 1, 19),
+        reminderOffset: offset,
+      );
+      final restored = CalendarEvent.fromJson(
+        jsonDecode(jsonEncode(original.toJson())) as Map<String, dynamic>,
+      );
+      expect(restored.reminderOffset, offset);
+    }
   });
 
   test('old one-time events remain compatible without recurrence fields', () {
@@ -110,6 +135,7 @@ void main() {
       'reminderMinutesBefore': null,
     });
     expect(restored.recurrence, EventRecurrence.none);
+    expect(restored.reminderOffset, ReminderOffset.none);
     expect(restored.isAllDay, isFalse);
     expect(restored.appliesToAllMembers, isTrue);
     expect(restored.occursOn(DateTime(2026, 8, 28)), isTrue);
@@ -159,7 +185,7 @@ void main() {
         start: DateTime(2026, 9, 1, 9),
         end: DateTime(2026, 9, 1, 10),
         isAllDay: true,
-        reminderMinutesBefore: 30,
+        reminderOffset: ReminderOffset.minutes30,
       ),
       throwsArgumentError,
     );

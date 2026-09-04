@@ -213,7 +213,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
       _store?.selectDay(_day);
       final reminders = widget.reminders;
       if (reminders != null) {
-        if (saved.reminderMinutesBefore != null) {
+        if (saved.reminderOffset != ReminderOffset.none) {
           final allowed = await reminders.requestPermission();
           if (!allowed && mounted) {
             feedback =
@@ -544,6 +544,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
                 '${_scheduleLabel(context, event)}'
                 '\nBetrifft: ${_assignmentLabel(event)}'
                 '${event.recurrence == EventRecurrence.none ? '' : '\n${event.recurrence.label}${event.recurrenceEnd == null ? '' : ' bis ${MaterialLocalizations.of(context).formatShortDate(event.recurrenceEnd!)}'}'}'
+                '${event.reminderOffset == ReminderOffset.none ? '' : '\nErinnerung: ${event.reminderOffset.label}'}'
                 '${event.notes.isEmpty ? '' : '\n${event.notes}'}',
               ),
               onTap: _busy ? null : () => _edit(event),

@@ -186,7 +186,7 @@ service cloud.firestore {
               || d.importance in ['low', 'normal', 'high'])
             && (!d.keys().hasAny(['reminderMinutesBefore'])
               || d.reminderMinutesBefore == null
-              || d.reminderMinutesBefore in [0, 10, 30, 60, 1440])
+              || d.reminderMinutesBefore in [0, 10, 15, 30, 60, 1440])
             && d.get('allDay', false) is bool
             && (!d.get('allDay', false)
               || d.get('reminderMinutesBefore', null) == null)

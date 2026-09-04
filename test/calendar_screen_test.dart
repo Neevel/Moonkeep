@@ -302,6 +302,63 @@ void main() {
     expect(store.allEvents.single.isAllDay, isTrue);
   });
 
+  testWidgets('selects a reminder and clears it when switching to all-day', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(600, 1200);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final store = emptyStore();
+    await tester.pumpWidget(MoonkeepApp(store: store));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byTooltip('Termin anlegen'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextFormField).first, 'Erinnerungstest');
+    final reminderDropdown = find.byType(
+      DropdownButtonFormField<ReminderOffset>,
+    );
+    await tester.ensureVisible(reminderDropdown);
+    expect(
+      tester
+          .widget<DropdownButtonFormField<ReminderOffset>>(reminderDropdown)
+          .initialValue,
+      ReminderOffset.none,
+    );
+    await tester.tap(reminderDropdown);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('15 Minuten vorher').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Speichern'));
+    await tester.pumpAndSettle();
+    expect(store.allEvents.single.reminderOffset, ReminderOffset.minutes15);
+    expect(
+      find.textContaining('Erinnerung: 15 Minuten vorher'),
+      findsOneWidget,
+    );
+
+    await tester.tap(agendaTile('Erinnerungstest'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(SwitchListTile, 'Ganztägig'));
+    await tester.pumpAndSettle();
+    expect(reminderDropdown, findsNothing);
+    await tester.tap(find.text('Speichern'));
+    await tester.pumpAndSettle();
+    expect(store.allEvents.single.reminderOffset, ReminderOffset.none);
+
+    await tester.tap(agendaTile('Erinnerungstest'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(SwitchListTile, 'Ganztägig'));
+    await tester.pumpAndSettle();
+    expect(
+      tester
+          .widget<DropdownButtonFormField<ReminderOffset>>(reminderDropdown)
+          .initialValue,
+      ReminderOffset.none,
+    );
+  });
+
   testWidgets('shows storage load failure without allowing new events', (
     tester,
   ) async {

@@ -436,6 +436,26 @@ test('all-day event field is optional, boolean, and disables reminders', async (
   ));
 });
 
+test('only supported reminder offsets are accepted while old events remain valid', async () => {
+  const client = db('alice');
+  for (const [index, reminderMinutesBefore] of [null, 0, 10, 15, 30, 60, 1440].entries()) {
+    await assertSucceeds(setDoc(
+      doc(client, `families/alpha/events/reminder-${index}`),
+      {...event(), reminderMinutesBefore},
+    ));
+  }
+  await assertFails(setDoc(
+    doc(client, 'families/alpha/events/reminder-invalid'),
+    {...event(), reminderMinutesBefore: 7},
+  ));
+  const withoutReminder = event();
+  delete withoutReminder.reminderMinutesBefore;
+  await assertSucceeds(setDoc(
+    doc(client, 'families/alpha/events/reminder-old'),
+    withoutReminder,
+  ));
+});
+
 test('event member assignments are optional and bounded', async () => {
   const client = db('alice');
   await assertSucceeds(setDoc(
@@ -515,7 +535,7 @@ test('invalid payloads, dates and skipped revisions are rejected', async () => {
     { month: 2, day: 30 }, { month: 2, day: 29 }, { endMinute: 540 },
     { startMinute: -1 }, { endMinute: 1440 }, { revision: 2 },
     { updatedBy: 'bob' }, { unknown: true },
-    { importance: 'urgent' }, { reminderMinutesBefore: 15 },
+    { importance: 'urgent' }, { reminderMinutesBefore: 7 },
   ];
   for (const patch of invalid) await assertFails(setDoc(ref, { ...event(), ...patch }));
   await assertSucceeds(setDoc(ref, { ...event(), year: 2028, month: 2, day: 29 }));

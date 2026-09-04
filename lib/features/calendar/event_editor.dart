@@ -32,7 +32,7 @@ class _EventEditorState extends State<EventEditor> {
   late TimeOfDay _start;
   late TimeOfDay _end;
   late EventImportance _importance;
-  late int? _reminderMinutesBefore;
+  late ReminderOffset _reminderOffset;
   late bool _isAllDay;
   late EventRecurrence _recurrence;
   late DateTime? _recurrenceEnd;
@@ -55,7 +55,7 @@ class _EventEditorState extends State<EventEditor> {
         ? const TimeOfDay(hour: 10, minute: 0)
         : TimeOfDay.fromDateTime(event.end);
     _importance = event?.importance ?? EventImportance.normal;
-    _reminderMinutesBefore = event?.reminderMinutesBefore;
+    _reminderOffset = event?.reminderOffset ?? ReminderOffset.none;
     _isAllDay = event?.isAllDay ?? false;
     _recurrence = event?.recurrence ?? EventRecurrence.none;
     _recurrenceEnd = event?.recurrenceEnd;
@@ -198,7 +198,7 @@ class _EventEditorState extends State<EventEditor> {
         notes: _notes.text,
         revision: widget.event?.revision ?? 0,
         importance: _importance,
-        reminderMinutesBefore: _isAllDay ? null : _reminderMinutesBefore,
+        reminderOffset: _isAllDay ? ReminderOffset.none : _reminderOffset,
         isAllDay: _isAllDay,
         recurrence: _recurrence,
         recurrenceEnd: _recurrence == EventRecurrence.none
@@ -358,7 +358,10 @@ class _EventEditorState extends State<EventEditor> {
                   value: _isAllDay,
                   onChanged: _busy
                       ? null
-                      : (value) => setState(() => _isAllDay = value),
+                      : (value) => setState(() {
+                          _isAllDay = value;
+                          if (value) _reminderOffset = ReminderOffset.none;
+                        }),
                 ),
                 if (!_isAllDay)
                   Wrap(
@@ -405,40 +408,30 @@ class _EventEditorState extends State<EventEditor> {
                 ),
                 const SizedBox(height: 16),
                 if (!_isAllDay)
-                  DropdownButtonFormField<int?>(
+                  DropdownButtonFormField<ReminderOffset>(
                     isExpanded: true,
-                    initialValue: _reminderMinutesBefore,
+                    initialValue: _reminderOffset,
                     decoration: const InputDecoration(
                       labelText: 'Erinnerung',
                       prefixIcon: Icon(Icons.notifications_outlined),
                     ),
-                    items: const [
-                      DropdownMenuItem(value: null, child: Text('Keine')),
-                      DropdownMenuItem(
-                        value: 0,
-                        child: Text('Zum Terminbeginn'),
-                      ),
-                      DropdownMenuItem(
-                        value: 10,
-                        child: Text('10 Minuten vorher'),
-                      ),
-                      DropdownMenuItem(
-                        value: 30,
-                        child: Text('30 Minuten vorher'),
-                      ),
-                      DropdownMenuItem(
-                        value: 60,
-                        child: Text('1 Stunde vorher'),
-                      ),
-                      DropdownMenuItem(
-                        value: 1440,
-                        child: Text('1 Tag vorher'),
-                      ),
+                    items: [
+                      for (final offset in {
+                        ...ReminderOffset.editorValues,
+                        if (_reminderOffset == ReminderOffset.legacyMinutes10)
+                          ReminderOffset.legacyMinutes10,
+                      })
+                        DropdownMenuItem(
+                          value: offset,
+                          child: Text(offset.label),
+                        ),
                     ],
                     onChanged: _busy
                         ? null
-                        : (value) =>
-                              setState(() => _reminderMinutesBefore = value),
+                        : (value) => setState(
+                            () =>
+                                _reminderOffset = value ?? ReminderOffset.none,
+                          ),
                   ),
                 const SizedBox(height: 24),
                 Text(

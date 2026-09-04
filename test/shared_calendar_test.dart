@@ -50,7 +50,7 @@ void main() {
       title: 'Reise',
       start: DateTime.utc(2026, 9, 4, 18),
       end: DateTime.utc(2026, 9, 6, 12),
-      reminderMinutesBefore: 30,
+      reminderOffset: ReminderOffset.minutes30,
     );
     final data = sharedEventData(original);
     expect(data['endYear'], 2026);
@@ -59,7 +59,24 @@ void main() {
     final restored = sharedEvent('trip', {...data, 'revision': 1});
     expect(restored.end, DateTime.utc(2026, 9, 6, 12));
     expect(restored.occursOn(DateTime.utc(2026, 9, 5)), isTrue);
-    expect(restored.reminderMinutesBefore, 30);
+    expect(restored.reminderOffset, ReminderOffset.minutes30);
+  });
+
+  test('shared reminder offsets round-trip through the existing field', () {
+    for (final offset in ReminderOffset.values) {
+      final original = CalendarEvent(
+        id: offset.name,
+        title: offset.label,
+        start: DateTime.utc(2026, 9, 1, 18),
+        end: DateTime.utc(2026, 9, 1, 19),
+        reminderOffset: offset,
+      );
+      final restored = sharedEvent(offset.name, {
+        ...sharedEventData(original),
+        'revision': 1,
+      });
+      expect(restored.reminderOffset, offset);
+    }
   });
 
   test('shared event parser rejects impossible dates and intervals', () {

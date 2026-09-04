@@ -21,7 +21,7 @@ Map<String, Object?> sharedEventData(CalendarEvent event) => {
   'startMinute': event.start.hour * 60 + event.start.minute,
   'endMinute': event.end.hour * 60 + event.end.minute,
   'importance': event.importance.name,
-  'reminderMinutesBefore': event.reminderMinutesBefore,
+  'reminderMinutesBefore': event.reminderOffset.minutesBefore,
   if (event.isAllDay) 'allDay': true,
   if (event.recurrence != EventRecurrence.none)
     'recurrence': {
@@ -64,7 +64,8 @@ CalendarEvent sharedEvent(String id, Map<String, dynamic> data) {
       end < 0 ||
       end >= 1440 ||
       (reminder != null &&
-          (reminder is! int || ![0, 10, 30, 60, 1440].contains(reminder))) ||
+          (reminder is! int ||
+              ![0, 10, 15, 30, 60, 1440].contains(reminder))) ||
       (allDay != null && allDay is! bool) ||
       (allDay == true && reminder != null) ||
       (assignedMemberIds != null &&
@@ -142,7 +143,7 @@ CalendarEvent sharedEvent(String id, Map<String, dynamic> data) {
     end: endDate.add(Duration(minutes: end)),
     revision: data['revision'] as int,
     importance: importance,
-    reminderMinutesBefore: reminder as int?,
+    reminderOffset: ReminderOffset.fromMinutes(reminder),
     isAllDay: allDay == true,
     recurrence: recurrence,
     recurrenceEnd: recurrenceEnd,

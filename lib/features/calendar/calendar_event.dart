@@ -19,6 +19,38 @@ enum EventRecurrence {
   final String label;
 }
 
+enum ReminderOffset {
+  none('Keine Erinnerung', null),
+  atStart('Zur Startzeit', 0),
+  legacyMinutes10('10 Minuten vorher', 10),
+  minutes15('15 Minuten vorher', 15),
+  minutes30('30 Minuten vorher', 30),
+  hours1('1 Stunde vorher', 60),
+  days1('1 Tag vorher', 1440);
+
+  const ReminderOffset(this.label, this.minutesBefore);
+
+  final String label;
+  final int? minutesBefore;
+
+  static const editorValues = [
+    none,
+    atStart,
+    minutes15,
+    minutes30,
+    hours1,
+    days1,
+  ];
+
+  static ReminderOffset fromMinutes(Object? value) {
+    if (value == null) return none;
+    return values.firstWhere(
+      (offset) => offset.minutesBefore == value,
+      orElse: () => throw const FormatException('Ungültige Erinnerung.'),
+    );
+  }
+}
+
 class CalendarEvent {
   CalendarEvent({
     required this.id,
@@ -28,7 +60,7 @@ class CalendarEvent {
     String notes = '',
     this.revision = 0,
     this.importance = EventImportance.normal,
-    this.reminderMinutesBefore,
+    this.reminderOffset = ReminderOffset.none,
     this.isAllDay = false,
     this.recurrence = EventRecurrence.none,
     this.recurrenceEnd,
@@ -42,7 +74,7 @@ class CalendarEvent {
     if (!end.isAfter(start)) {
       throw ArgumentError('Das Ende muss nach dem Beginn liegen.');
     }
-    if (isAllDay && reminderMinutesBefore != null) {
+    if (isAllDay && reminderOffset != ReminderOffset.none) {
       throw ArgumentError(
         'Ganztägige Termine unterstützen derzeit keine Erinnerungen.',
       );
@@ -77,7 +109,7 @@ class CalendarEvent {
   final String notes;
   final int revision;
   final EventImportance importance;
-  final int? reminderMinutesBefore;
+  final ReminderOffset reminderOffset;
   final bool isAllDay;
   final EventRecurrence recurrence;
   final DateTime? recurrenceEnd;
@@ -113,7 +145,7 @@ class CalendarEvent {
     'end': end.toIso8601String(),
     'notes': notes,
     'importance': importance.name,
-    'reminderMinutesBefore': reminderMinutesBefore,
+    'reminderMinutesBefore': reminderOffset.minutesBefore,
     'isAllDay': isAllDay,
     'recurrence': recurrence.name,
     'recurrenceEnd': recurrenceEnd?.toIso8601String(),
@@ -137,7 +169,7 @@ class CalendarEvent {
         (value) => value.name == json['importance'],
         orElse: () => EventImportance.normal,
       ),
-      reminderMinutesBefore: json['reminderMinutesBefore'] as int?,
+      reminderOffset: ReminderOffset.fromMinutes(json['reminderMinutesBefore']),
       isAllDay: json['isAllDay'] as bool? ?? false,
       recurrence: recurrence,
       recurrenceEnd: recurrence == EventRecurrence.none || recurrenceEnd == null
