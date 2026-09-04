@@ -66,7 +66,7 @@ class MonthCalendarView extends StatelessWidget {
                 for (final label in ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'])
                   Expanded(
                     child: Padding(
-                      padding: EdgeInsets.symmetric(vertical: 6),
+                      padding: EdgeInsets.symmetric(vertical: 4),
                       child: Text(
                         label,
                         textAlign: TextAlign.center,
@@ -137,9 +137,9 @@ class _MonthDayCell extends StatelessWidget {
         borderRadius: BorderRadius.circular(10),
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 140),
-          height: 74,
+          height: 68,
           margin: const EdgeInsets.all(1),
-          padding: const EdgeInsets.fromLTRB(3, 3, 3, 2),
+          padding: const EdgeInsets.fromLTRB(2, 3, 2, 1),
           decoration: BoxDecoration(
             color: selected ? colors.primaryContainer : null,
             borderRadius: BorderRadius.circular(10),
@@ -164,7 +164,7 @@ class _MonthDayCell extends StatelessWidget {
                   fontWeight: selected || today ? FontWeight.bold : null,
                 ),
               ),
-              const SizedBox(height: 4),
+              const SizedBox(height: 3),
               for (var index = 0; index < visibleEvents.length; index++)
                 Padding(
                   padding: const EdgeInsets.only(bottom: 2),
@@ -172,8 +172,8 @@ class _MonthDayCell extends StatelessWidget {
                     key: ValueKey(
                       'month-event-${visibleEvents[index].id}-${_dayId(day)}',
                     ),
-                    height: 16,
-                    padding: const EdgeInsets.symmetric(horizontal: 3),
+                    height: 15,
+                    padding: const EdgeInsets.symmetric(horizontal: 2),
                     decoration: BoxDecoration(
                       color: _eventColor(
                         colors,
@@ -183,11 +183,11 @@ class _MonthDayCell extends StatelessWidget {
                     ),
                     alignment: Alignment.centerLeft,
                     child: Text(
-                      '• ${visibleEvents[index].title}',
+                      visibleEvents[index].title,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
-                        fontSize: 9,
+                        fontSize: 10,
                         height: 1,
                         color: _eventColor(colors, visibleEvents[index]),
                         fontWeight: FontWeight.w600,

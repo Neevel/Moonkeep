@@ -20,6 +20,9 @@ void main() {
   String dayId(DateTime day) =>
       '${day.year.toString().padLeft(4, '0')}-${day.month.toString().padLeft(2, '0')}-${day.day.toString().padLeft(2, '0')}';
 
+  Finder agendaTile(String title) =>
+      find.ancestor(of: find.text(title), matching: find.byType(ListTile));
+
   CalendarEvent eventAt(
     String id,
     String title,
@@ -49,7 +52,7 @@ void main() {
     await tester.pumpWidget(MoonkeepApp(store: emptyStore()));
     await tester.pumpAndSettle();
     expect(find.text('Noch keine Termine'), findsOneWidget);
-    await tester.tap(find.text('Termin anlegen'));
+    await tester.tap(find.byTooltip('Termin anlegen'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Speichern'));
     await tester.pumpAndSettle();
@@ -57,12 +60,12 @@ void main() {
     await tester.enterText(find.byType(TextFormField).first, 'Picknick');
     await tester.tap(find.text('Speichern'));
     await tester.pumpAndSettle();
-    expect(find.text('Picknick'), findsOneWidget);
+    expect(agendaTile('Picknick'), findsOneWidget);
     expect(find.text('Termin erstellt.'), findsOneWidget);
 
-    await tester.ensureVisible(find.text('Picknick'));
+    await tester.ensureVisible(agendaTile('Picknick'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Picknick'));
+    await tester.tap(agendaTile('Picknick'));
     await tester.pumpAndSettle();
     await tester.enterText(
       find.byType(TextFormField).first,
@@ -70,8 +73,8 @@ void main() {
     );
     await tester.tap(find.text('Speichern'));
     await tester.pumpAndSettle();
-    expect(find.text('Picknick im Park'), findsOneWidget);
-    expect(find.text('Picknick'), findsNothing);
+    expect(agendaTile('Picknick im Park'), findsOneWidget);
+    expect(agendaTile('Picknick'), findsNothing);
     expect(find.text('Termin gespeichert.'), findsOneWidget);
 
     await tester.ensureVisible(find.byTooltip('Termin löschen'));
@@ -79,7 +82,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('Abbrechen'));
     await tester.pumpAndSettle();
-    expect(find.text('Picknick im Park'), findsOneWidget);
+    expect(agendaTile('Picknick im Park'), findsOneWidget);
     await tester.tap(find.byTooltip('Termin löschen'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Löschen'));
@@ -94,7 +97,7 @@ void main() {
     final store = emptyStore();
     await tester.pumpWidget(MoonkeepApp(store: store));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Termin anlegen'));
+    await tester.tap(find.byTooltip('Termin anlegen'));
     await tester.pumpAndSettle();
     await tester.enterText(find.byType(TextFormField).first, 'Nicht speichern');
     await tester.tap(find.text('Abbrechen'));
@@ -113,7 +116,7 @@ void main() {
     await tester.pumpWidget(MoonkeepApp(store: store));
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text('Termin anlegen'));
+    await tester.tap(find.byTooltip('Termin anlegen'));
     await tester.pumpAndSettle();
     await tester.enterText(find.byType(TextFormField).first, 'Training');
     await tester.ensureVisible(find.text('Keine Wiederholung'));
@@ -129,7 +132,7 @@ void main() {
     expect(find.textContaining('Wöchentlich'), findsOneWidget);
     expect(find.text('Terminserie erstellt.'), findsOneWidget);
 
-    await tester.tap(find.text('Training'));
+    await tester.tap(agendaTile('Training'));
     await tester.pumpAndSettle();
     expect(find.text('Serie bearbeiten'), findsOneWidget);
     expect(
@@ -168,7 +171,7 @@ void main() {
     await tester.pumpWidget(MoonkeepApp(store: store));
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text('Termin anlegen'));
+    await tester.tap(find.byTooltip('Termin anlegen'));
     await tester.pumpAndSettle();
     await tester.enterText(find.byType(TextFormField).first, 'Geburtstag');
     final allDaySwitch = find.widgetWithText(SwitchListTile, 'Ganztägig');
@@ -191,7 +194,7 @@ void main() {
     );
     expect((tile.subtitle! as Text).data, 'Ganztägig\nBetrifft: Alle');
 
-    await tester.tap(find.text('Geburtstag'));
+    await tester.tap(agendaTile('Geburtstag'));
     await tester.pumpAndSettle();
     expect(tester.widget<SwitchListTile>(allDaySwitch).value, isTrue);
     await tester.tap(allDaySwitch);
@@ -210,7 +213,7 @@ void main() {
     );
     expect((tile.subtitle! as Text).data, isNot('Ganztägig'));
 
-    await tester.tap(find.text('Geburtstag'));
+    await tester.tap(agendaTile('Geburtstag'));
     await tester.pumpAndSettle();
     await tester.tap(allDaySwitch);
     await tester.pumpAndSettle();
@@ -232,7 +235,7 @@ void main() {
       find.text('Der gemeinsame Kalender konnte nicht geladen werden.'),
       findsOneWidget,
     );
-    expect(find.text('Termin anlegen'), findsNothing);
+    expect(find.byKey(const ValueKey('calendar-add-event')), findsNothing);
   });
 
   testWidgets('shows save failure and keeps the editor open', (tester) async {
@@ -245,7 +248,7 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Termin anlegen'));
+    await tester.tap(find.byTooltip('Termin anlegen'));
     await tester.pumpAndSettle();
     await tester.enterText(find.byType(TextFormField).first, 'Ausflug');
     await tester.tap(find.text('Speichern'));
@@ -346,6 +349,14 @@ void main() {
       findsOneWidget,
     );
     expect(
+      find.descendant(
+        of: find.byKey(ValueKey('month-event-all-day-${dayId(today)}')),
+        matching: find.text('Urlaub'),
+      ),
+      findsOneWidget,
+    );
+    expect(find.text('• Urlaub'), findsNothing);
+    expect(
       find.byKey(ValueKey('month-event-recurring-${dayId(today)}')),
       findsOneWidget,
     );
@@ -354,7 +365,7 @@ void main() {
 
     await tester.tap(find.byKey(ValueKey('month-day-${dayId(tomorrow)}')));
     await tester.pumpAndSettle();
-    expect(find.text('Einkaufen'), findsOneWidget);
+    expect(agendaTile('Einkaufen'), findsOneWidget);
     expect(
       find.text(
         MaterialLocalizations.of(tester.element(find.byType(Scaffold).first))
@@ -364,10 +375,10 @@ void main() {
     );
   });
 
-  testWidgets('week grid lists equal-height events chronologically', (
+  testWidgets('week overview stays compact and lists events chronologically', (
     tester,
   ) async {
-    tester.view.physicalSize = const Size(600, 1200);
+    tester.view.physicalSize = const Size(360, 800);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
@@ -377,6 +388,7 @@ void main() {
     final wednesday = weekStart.add(const Duration(days: 2));
     final thursday = weekStart.add(const Duration(days: 3));
     final events = [
+      eventAt('all-day-tuesday', 'Geburtstag', tuesday, 9, 10, isAllDay: true),
       eventAt('timed', 'Besprechung', tuesday, 9, 11),
       eventAt('early', 'Frühdienst', tuesday, 2, 3),
       eventAt(
@@ -387,7 +399,7 @@ void main() {
         12,
         assignedMemberIds: const ['member-a'],
       ),
-      eventAt('all-day', 'Geburtstag', wednesday, 9, 10, isAllDay: true),
+      eventAt('all-day', 'Urlaub', wednesday, 9, 10, isAllDay: true),
       eventAt(
         'recurring',
         'Training',
@@ -417,11 +429,27 @@ void main() {
         findsOneWidget,
       );
     }
+    for (var index = 0; index < 6; index++) {
+      final current = find.byKey(
+        ValueKey('week-day-${dayId(weekStart.add(Duration(days: index)))}'),
+      );
+      final next = find.byKey(
+        ValueKey('week-day-${dayId(weekStart.add(Duration(days: index + 1)))}'),
+      );
+      expect(
+        tester.getTopLeft(current).dy,
+        lessThan(tester.getTopLeft(next).dy),
+      );
+    }
     final early = find.byKey(ValueKey('week-event-early-${dayId(tuesday)}'));
     final timed = find.byKey(ValueKey('week-event-timed-${dayId(tuesday)}'));
     final overlap = find.byKey(
       ValueKey('week-event-overlap-${dayId(tuesday)}'),
     );
+    final allDay = find.byKey(
+      ValueKey('week-all-day-all-day-tuesday-${dayId(tuesday)}'),
+    );
+    expect(tester.getTopLeft(allDay).dy, lessThan(tester.getTopLeft(early).dy));
     expect(tester.getTopLeft(early).dy, lessThan(tester.getTopLeft(timed).dy));
     expect(
       tester.getTopLeft(timed).dy,
@@ -431,16 +459,21 @@ void main() {
     expect(tester.getSize(timed).height, tester.getSize(overlap).height);
     expect(
       tester.getSize(find.byKey(const ValueKey('week-swipe-area'))).height,
-      greaterThanOrEqualTo(480),
+      lessThan(600),
     );
-    expect(
-      tester
-          .getSize(find.byKey(ValueKey('week-day-card-${dayId(weekStart)}')))
-          .height,
-      greaterThanOrEqualTo(150),
-    );
-    expect(find.text('02:00 – 03:00\nFrühdienst'), findsOneWidget);
-    expect(find.text('09:00 – 11:00\nBesprechung'), findsOneWidget);
+    final emptyDayHeight = tester
+        .getSize(find.byKey(ValueKey('week-day-card-${dayId(weekStart)}')))
+        .height;
+    final busyDayHeight = tester
+        .getSize(find.byKey(ValueKey('week-day-card-${dayId(tuesday)}')))
+        .height;
+    expect(emptyDayHeight, lessThan(busyDayHeight));
+    expect(find.text('Keine Termine'), findsWidgets);
+    expect(find.text('Ganztägig'), findsWidgets);
+    expect(find.text('02:00'), findsOneWidget);
+    expect(find.text('Frühdienst'), findsOneWidget);
+    expect(find.text('09:00'), findsOneWidget);
+    expect(find.text('Besprechung'), findsOneWidget);
     expect(find.text('06:00'), findsNothing);
     expect(find.text('22:00'), findsNothing);
     expect(
@@ -548,7 +581,8 @@ void main() {
     expect(tester.takeException(), isNull);
     await tester.tap(find.text('Monat'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Termin anlegen'));
+    expect(find.byTooltip('Termin anlegen'), findsOneWidget);
+    await tester.tap(find.byTooltip('Termin anlegen'));
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
   });
@@ -572,7 +606,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text('Termin anlegen'));
+    await tester.tap(find.byTooltip('Termin anlegen'));
     await tester.pumpAndSettle();
     await tester.enterText(find.byType(TextFormField).first, 'Planung');
     await tester.ensureVisible(find.text('Betrifft'));
@@ -594,7 +628,7 @@ void main() {
     expect(store.allEvents.single.assignedMemberIds, {'member-a'});
     expect(find.textContaining('Betrifft: marcel@example.com'), findsOneWidget);
 
-    await tester.tap(find.text('Planung'));
+    await tester.tap(agendaTile('Planung'));
     await tester.pumpAndSettle();
     await tester.ensureVisible(find.text('Betrifft'));
     await tester.tap(find.text('Betrifft'));

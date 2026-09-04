@@ -303,12 +303,13 @@ class _CalendarScreenState extends State<CalendarScreen> {
       ),
       floatingActionButton: _store == null
           ? null
-          : FloatingActionButton.extended(
+          : FloatingActionButton(
+              key: const ValueKey('calendar-add-event'),
+              tooltip: 'Termin anlegen',
               onPressed: _busy || _store!.isLoading || _store!.syncError != null
                   ? null
                   : () => _edit(),
-              icon: const Icon(Icons.add),
-              label: const Text('Termin anlegen'),
+              child: const Icon(Icons.add),
             ),
       body: SafeArea(
         child: _error != null
@@ -418,10 +419,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
             switchOutCurve: Curves.easeInCubic,
             layoutBuilder: (currentChild, previousChildren) => Stack(
               alignment: Alignment.topCenter,
-              children: [
-                ...previousChildren,
-                ?currentChild,
-              ],
+              children: [...previousChildren, ?currentChild],
             ),
             transitionBuilder: (child, animation) {
               final incoming = child.key == ValueKey(periodKey);
