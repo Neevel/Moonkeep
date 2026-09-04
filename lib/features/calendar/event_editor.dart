@@ -10,12 +10,14 @@ class EventEditor extends StatefulWidget {
     required this.day,
     this.event,
     this.memberLabels = const {},
+    this.initialAssignedMemberIds = const {},
   });
 
   final CalendarRepository store;
   final DateTime day;
   final CalendarEvent? event;
   final Map<String, String> memberLabels;
+  final Set<String> initialAssignedMemberIds;
 
   @override
   State<EventEditor> createState() => _EventEditorState();
@@ -55,7 +57,9 @@ class _EventEditorState extends State<EventEditor> {
     _isAllDay = event?.isAllDay ?? false;
     _recurrence = event?.recurrence ?? EventRecurrence.none;
     _recurrenceEnd = event?.recurrenceEnd;
-    _assignedMemberIds = {...?event?.assignedMemberIds};
+    _assignedMemberIds = {
+      ...(event?.assignedMemberIds ?? widget.initialAssignedMemberIds),
+    };
   }
 
   @override

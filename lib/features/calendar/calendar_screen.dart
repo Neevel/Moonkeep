@@ -37,6 +37,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
   DateTime _visibleWeekStart = _startOfWeek(DateTime.now());
   _CalendarViewMode _viewMode = _CalendarViewMode.month;
   int _navigationDirection = 1;
+  String? _selectedMemberId;
   String? _error;
   bool _busy = false;
   StreamSubscription<CalendarNotice>? _noticeSubscription;
@@ -46,6 +47,15 @@ class _CalendarScreenState extends State<CalendarScreen> {
   void initState() {
     super.initState();
     _load();
+  }
+
+  @override
+  void didUpdateWidget(covariant CalendarScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (_selectedMemberId != null &&
+        !widget.memberLabels.containsKey(_selectedMemberId)) {
+      _selectedMemberId = null;
+    }
   }
 
   Future<void> _load() async {
@@ -177,6 +187,9 @@ class _CalendarScreenState extends State<CalendarScreen> {
           day: _day,
           event: event,
           memberLabels: widget.memberLabels,
+          initialAssignedMemberIds: event == null && _selectedMemberId != null
+              ? {_selectedMemberId!}
+              : const {},
         ),
       ),
     );
@@ -450,13 +463,23 @@ class _CalendarScreenState extends State<CalendarScreen> {
 
   Map<DateTime, List<CalendarEvent>> _eventsByDay(DateTime start, int days) => {
     for (var index = 0; index < days; index++)
-      _dateKey(start.add(Duration(days: index))): _store!.eventsOn(
+      _dateKey(start.add(Duration(days: index))): _filteredEventsOn(
         start.add(Duration(days: index)),
       ),
   };
 
+  List<CalendarEvent> _filteredEventsOn(DateTime day) => _store!
+      .eventsOn(day)
+      .where(
+        (event) =>
+            _selectedMemberId == null ||
+            event.appliesToAllMembers ||
+            event.assignedMemberIds.contains(_selectedMemberId),
+      )
+      .toList();
+
   Widget _agenda(BuildContext context) {
-    final events = _store!.eventsOn(_day);
+    final events = _filteredEventsOn(_day);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -552,16 +575,25 @@ class _CalendarScreenState extends State<CalendarScreen> {
             _shortMemberLabel(a.value).compareTo(_shortMemberLabel(b.value)),
       );
     return SizedBox(
-      height: 28,
+      height: 30,
       child: ListView(
         key: const ValueKey('member-color-legend'),
         scrollDirection: Axis.horizontal,
         children: [
-          const _LegendItem(label: 'Alle', audience: MemberColorResolver.all),
+          _LegendItem(
+            key: const ValueKey('member-filter-all'),
+            label: 'Alle',
+            audience: MemberColorResolver.all,
+            selected: _selectedMemberId == null,
+            onTap: () => setState(() => _selectedMemberId = null),
+          ),
           for (final entry in entries)
             _LegendItem(
+              key: ValueKey('member-filter-${entry.key}'),
               label: _shortMemberLabel(entry.value),
               audience: MemberColorResolver.forMemberId(entry.key),
+              selected: _selectedMemberId == entry.key,
+              onTap: () => setState(() => _selectedMemberId = entry.key),
             ),
         ],
       ),
@@ -626,43 +658,69 @@ class _AgendaAudienceMarker extends StatelessWidget {
 }
 
 class _LegendItem extends StatelessWidget {
-  const _LegendItem({required this.label, required this.audience});
+  const _LegendItem({
+    super.key,
+    required this.label,
+    required this.audience,
+    required this.selected,
+    required this.onTap,
+  });
 
   final String label;
   final CalendarAudienceStyle audience;
+  final bool selected;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) => Semantics(
-    label: 'Farbe für $label',
-    child: Container(
-      margin: const EdgeInsets.only(right: 6),
-      padding: const EdgeInsets.symmetric(horizontal: 8),
-      decoration: BoxDecoration(
-        color: audience.background,
+    label: 'Kalenderfilter $label',
+    button: true,
+    selected: selected,
+    child: Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
         borderRadius: BorderRadius.circular(14),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            width: 8,
-            height: 8,
-            decoration: BoxDecoration(
-              color: audience.foreground,
-              shape: BoxShape.circle,
+        child: Container(
+          margin: const EdgeInsets.only(right: 6),
+          padding: const EdgeInsets.symmetric(horizontal: 8),
+          decoration: BoxDecoration(
+            color: audience.background,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(
+              color: selected
+                  ? Theme.of(context).colorScheme.primary
+                  : Colors.transparent,
+              width: 1.5,
             ),
           ),
-          const SizedBox(width: 5),
-          Text(
-            label,
-            maxLines: 1,
-            style: TextStyle(
-              color: audience.foreground,
-              fontSize: 11,
-              fontWeight: FontWeight.w600,
-            ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (selected)
+                Icon(Icons.check, size: 12, color: audience.foreground)
+              else
+                Container(
+                  width: 8,
+                  height: 8,
+                  decoration: BoxDecoration(
+                    color: audience.foreground,
+                    shape: BoxShape.circle,
+                  ),
+                ),
+              const SizedBox(width: 5),
+              Text(
+                label,
+                maxLines: 1,
+                style: TextStyle(
+                  color: audience.foreground,
+                  fontSize: 11,
+                  fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
+                ),
+              ),
+            ],
           ),
-        ],
+        ),
       ),
     ),
   );

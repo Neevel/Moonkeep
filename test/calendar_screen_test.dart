@@ -819,6 +819,233 @@ void main() {
     expect(find.textContaining('Betrifft: Marcel, Sandra'), findsOneWidget);
   });
 
+  testWidgets(
+    'member chips filter month week agenda and preselect new assignments',
+    (tester) async {
+      tester.view.physicalSize = const Size(700, 1200);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final now = DateTime.now();
+      final today = DateTime(now.year, now.month, now.day);
+      final tomorrow = today.add(const Duration(days: 1));
+      final store = storeWithEvents([
+        eventAt('all', 'Für alle', today, 8, 9),
+        eventAt(
+          'a',
+          'Nur Marcel',
+          today,
+          9,
+          10,
+          assignedMemberIds: const ['member-a'],
+        ),
+        eventAt(
+          'b',
+          'Nur Sandra',
+          today,
+          10,
+          11,
+          importance: EventImportance.high,
+          assignedMemberIds: const ['member-b'],
+        ),
+        eventAt(
+          'ab',
+          'Marcel und Sandra',
+          today,
+          11,
+          12,
+          isAllDay: true,
+          assignedMemberIds: const ['member-a', 'member-b'],
+        ),
+        eventAt(
+          'tomorrow-b',
+          'Morgen nur Sandra',
+          tomorrow,
+          9,
+          10,
+          recurrence: EventRecurrence.daily,
+          assignedMemberIds: const ['member-b'],
+        ),
+      ]);
+      await tester.pumpWidget(
+        MaterialApp(
+          home: CalendarScreen(
+            store: store,
+            memberLabels: const {'member-a': 'Marcel', 'member-b': 'Sandra'},
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(agendaTile('Für alle'), findsOneWidget);
+      expect(agendaTile('Nur Marcel'), findsOneWidget);
+      expect(agendaTile('Nur Sandra'), findsOneWidget);
+      expect(agendaTile('Marcel und Sandra'), findsOneWidget);
+      expect(
+        find.byKey(ValueKey('month-more-${dayId(today)}')),
+        findsOneWidget,
+      );
+      expect(
+        tester
+            .widget<Text>(find.byKey(ValueKey('month-more-${dayId(today)}')))
+            .data,
+        '+2',
+      );
+
+      await tester.tap(find.byKey(const ValueKey('member-filter-member-a')));
+      await tester.pumpAndSettle();
+      expect(agendaTile('Für alle'), findsOneWidget);
+      expect(agendaTile('Nur Marcel'), findsOneWidget);
+      expect(agendaTile('Marcel und Sandra'), findsOneWidget);
+      expect(agendaTile('Nur Sandra'), findsNothing);
+      expect(
+        find.byKey(ValueKey('month-event-b-${dayId(today)}')),
+        findsNothing,
+      );
+      expect(
+        tester
+            .widget<Text>(find.byKey(ValueKey('month-more-${dayId(today)}')))
+            .data,
+        '+1',
+      );
+
+      await tester.tap(agendaTile('Marcel und Sandra'));
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.text('Betrifft'));
+      await tester.tap(find.text('Betrifft'));
+      await tester.pumpAndSettle();
+      expect(
+        tester
+            .widget<CheckboxListTile>(
+              find.byKey(const ValueKey('assignment-member-a')),
+            )
+            .value,
+        isTrue,
+      );
+      expect(
+        tester
+            .widget<CheckboxListTile>(
+              find.byKey(const ValueKey('assignment-member-b')),
+            )
+            .value,
+        isTrue,
+      );
+      await tester.pageBack();
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Woche'));
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(ValueKey('week-event-a-${dayId(today)}')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(ValueKey('week-event-b-${dayId(today)}')),
+        findsNothing,
+      );
+      expect(
+        find.descendant(
+          of: find.byKey(ValueKey('week-day-card-${dayId(tomorrow)}')),
+          matching: find.text('Keine Termine'),
+        ),
+        findsOneWidget,
+      );
+
+      await tester.tap(find.byTooltip('Termin anlegen'));
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.text('Betrifft'));
+      await tester.tap(find.text('Betrifft'));
+      await tester.pumpAndSettle();
+      expect(
+        tester
+            .widget<CheckboxListTile>(
+              find.byKey(const ValueKey('assignment-member-a')),
+            )
+            .value,
+        isTrue,
+      );
+      expect(
+        tester
+            .widget<CheckboxListTile>(
+              find.byKey(const ValueKey('assignment-all')),
+            )
+            .value,
+        isFalse,
+      );
+      await tester.pageBack();
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const ValueKey('member-filter-member-b')));
+      await tester.pumpAndSettle();
+      expect(agendaTile('Nur Marcel'), findsNothing);
+      expect(agendaTile('Nur Sandra'), findsOneWidget);
+      expect(agendaTile('Marcel und Sandra'), findsOneWidget);
+      await tester.tap(find.byKey(const ValueKey('member-filter-all')));
+      await tester.pumpAndSettle();
+      expect(agendaTile('Nur Marcel'), findsOneWidget);
+      expect(agendaTile('Nur Sandra'), findsOneWidget);
+    },
+  );
+
+  testWidgets('member filter survives renaming and resets when member leaves', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(600, 1000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final store = storeWithEvents([
+      eventAt(
+        'a',
+        'Termin A',
+        today,
+        9,
+        10,
+        assignedMemberIds: const ['member-a'],
+      ),
+      eventAt(
+        'b',
+        'Termin B',
+        today,
+        10,
+        11,
+        assignedMemberIds: const ['member-b'],
+      ),
+    ]);
+
+    Widget calendar(Map<String, String> labels) => MaterialApp(
+      home: CalendarScreen(
+        key: const ValueKey('calendar'),
+        store: store,
+        memberLabels: labels,
+      ),
+    );
+
+    await tester.pumpWidget(
+      calendar(const {'member-a': 'Marcel', 'member-b': 'Sandra'}),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('member-filter-member-a')));
+    await tester.pumpAndSettle();
+    expect(agendaTile('Termin A'), findsOneWidget);
+    expect(agendaTile('Termin B'), findsNothing);
+
+    await tester.pumpWidget(
+      calendar(const {'member-a': 'Papa', 'member-b': 'Sandra'}),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Papa'), findsOneWidget);
+    expect(agendaTile('Termin A'), findsOneWidget);
+    expect(agendaTile('Termin B'), findsNothing);
+
+    await tester.pumpWidget(calendar(const {'member-b': 'Sandra'}));
+    await tester.pumpAndSettle();
+    expect(agendaTile('Termin A'), findsOneWidget);
+    expect(agendaTile('Termin B'), findsOneWidget);
+  });
+
   testWidgets('shows a safe fallback for an unknown assigned member', (
     tester,
   ) async {
