@@ -21,7 +21,13 @@ class FakeAuth implements AuthRepository {
   @override
   Future<void> signIn(String email, String password) async {}
   @override
-  Future<void> register(String email, String password) async {}
+  Future<void> register(
+    String displayName,
+    String email,
+    String password,
+  ) async {}
+  @override
+  Future<void> updateDisplayName(String displayName) async {}
   @override
   Future<void> sendPasswordReset(String email) async {}
   @override
@@ -45,6 +51,7 @@ class FakeFamily implements FamilyRepository {
       left = 0,
       transferred = 0,
       dissolved = 0;
+  String? updatedDisplayName;
   FamilyFailure? transferFailure;
   FamilyFailure? joinFailure;
   Completer<void>? pendingJoin;
@@ -79,6 +86,11 @@ class FakeFamily implements FamilyRepository {
   Future<List<FamilyMember>> members(Family family) async => familyMembers;
 
   @override
+  Future<void> updateOwnDisplayName(String displayName) async {
+    updatedDisplayName = displayName;
+  }
+
+  @override
   Future<FamilyInvitation> invite(Family value) async {
     invited++;
     return FamilyInvitation(code: 'a' * 32, expiresAt: DateTime(2026, 9, 4));
@@ -111,6 +123,7 @@ class FakeFamily implements FamilyRepository {
           id: member.id,
           email: member.email,
           isOwner: member.id == newOwnerId,
+          displayName: member.displayName,
         ),
     ];
     return family!;
@@ -140,6 +153,29 @@ class FakeSharedCalendar extends CalendarStore {
 }
 
 void main() {
+  test('family member prefers display name and keeps legacy fallbacks', () {
+    const named = FamilyMember(
+      id: 'named',
+      email: 'marcel.jeske@example.test',
+      isOwner: false,
+      displayName: ' Marcel ',
+    );
+    const legacy = FamilyMember(
+      id: 'legacy',
+      email: 'sandra@example.test',
+      isOwner: false,
+    );
+    const empty = FamilyMember(
+      id: 'empty',
+      email: 'fallback@example.test',
+      isOwner: false,
+      displayName: '   ',
+    );
+    expect(named.displayLabel, 'Marcel');
+    expect(legacy.displayLabel, 'sandra');
+    expect(empty.displayLabel, 'fallback');
+  });
+
   test('maps Firebase failures to short user-facing calendar messages', () {
     expect(
       familyError(
@@ -239,17 +275,17 @@ void main() {
     await tester.pumpWidget(MoonkeepApp(auth: auth, family: family));
     await tester.pumpAndSettle();
     expect(find.text('Jeske'), findsOneWidget);
-    expect(find.text('Termin anlegen'), findsOneWidget);
+    expect(find.byTooltip('Termin anlegen'), findsOneWidget);
     expect(find.byTooltip('Kalender verwalten'), findsOneWidget);
     expect(find.byTooltip('Mein Konto'), findsOneWidget);
-    await tester.tap(find.text('Termin anlegen'));
+    await tester.tap(find.byTooltip('Termin anlegen'));
     await tester.pumpAndSettle();
     final assignments = find.widgetWithText(ExpansionTile, 'Betrifft').first;
     await tester.ensureVisible(assignments);
     await tester.tap(assignments);
     await tester.pumpAndSettle();
-    expect(find.text('owner@example.test'), findsOneWidget);
-    expect(find.text('member@example.test'), findsOneWidget);
+    expect(find.text('owner'), findsOneWidget);
+    expect(find.text('member'), findsOneWidget);
   });
 
   testWidgets('joins family and opens separate shared calendar', (
@@ -318,6 +354,8 @@ void main() {
     expect(find.text('Mitglieder (2)'), findsOneWidget);
     expect(find.text('owner@example.test'), findsOneWidget);
     expect(find.text('member@example.test'), findsOneWidget);
+    expect(find.text('owner'), findsOneWidget);
+    expect(find.text('member'), findsOneWidget);
     expect(find.text('Besitzer'), findsOneWidget);
     expect(find.text('Mitglied'), findsOneWidget);
   });
@@ -329,17 +367,9 @@ void main() {
     family.family = const Family(id: 'family', name: 'Jeske', ownerId: 'owner');
     await tester.tap(find.text('Aktualisieren'));
     await tester.pumpAndSettle();
-    expect(
-      find.byTooltip('Besitz an member@example.test übertragen'),
-      findsOneWidget,
-    );
-    expect(
-      find.byTooltip('Besitz an owner@example.test übertragen'),
-      findsNothing,
-    );
-    await tester.tap(
-      find.byTooltip('Besitz an member@example.test übertragen'),
-    );
+    expect(find.byTooltip('Besitz an member übertragen'), findsOneWidget);
+    expect(find.byTooltip('Besitz an owner übertragen'), findsNothing);
+    await tester.tap(find.byTooltip('Besitz an member übertragen'));
     await tester.pumpAndSettle();
     expect(find.text('Besitz übertragen?'), findsOneWidget);
     expect(
@@ -393,9 +423,7 @@ void main() {
     );
     await tester.tap(find.text('Aktualisieren'));
     await tester.pumpAndSettle();
-    await tester.tap(
-      find.byTooltip('Besitz an member@example.test übertragen'),
-    );
+    await tester.tap(find.byTooltip('Besitz an member übertragen'));
     await tester.pumpAndSettle();
     await tester.tap(find.widgetWithText(FilledButton, 'Besitz übertragen'));
     await tester.pumpAndSettle();
@@ -405,10 +433,7 @@ void main() {
       ),
       findsOneWidget,
     );
-    expect(
-      find.byTooltip('Besitz an member@example.test übertragen'),
-      findsOneWidget,
-    );
+    expect(find.byTooltip('Besitz an member übertragen'), findsOneWidget);
   });
 
   testWidgets('member confirms leaving the shared calendar', (tester) async {

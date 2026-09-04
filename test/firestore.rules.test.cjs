@@ -11,24 +11,27 @@ const db = (uid, verified = true) => env.authenticatedContext(uid, { email_verif
 const membership = (fid, invitationId = null) => ({ familyId: fid, invitationId, joinedAt: serverTimestamp() });
 const family = (uid, status) => ({ name: 'Testfamilie', ownerId: uid,
   ...(status == null ? {} : { status }), timeZone: 'Europe/Berlin', createdAt: serverTimestamp() });
-const memberProfile = (uid, role = 'member', joinedAt = serverTimestamp()) => ({
+const memberProfile = (uid, role = 'member', joinedAt = serverTimestamp(), displayName = null) => ({
   email: `${uid}@example.test`, role, joinedAt,
+  ...(displayName == null ? {} : { displayName }),
 });
-async function create(uid, fid, status) {
+async function create(uid, fid, status, displayName = null) {
   const client = db(uid), batch = writeBatch(client);
   batch.set(doc(client, 'families', fid), family(uid, status));
   batch.set(doc(client, 'memberships', uid), membership(fid));
-  batch.set(doc(client, 'families', fid, 'members', uid), memberProfile(uid, 'owner'));
+  batch.set(doc(client, 'families', fid, 'members', uid),
+    memberProfile(uid, 'owner', serverTimestamp(), displayName));
   await batch.commit();
 }
 const invitation = (fid = 'alpha') => ({ familyId: fid, createdAt: serverTimestamp(),
   expiresAt: Timestamp.fromMillis(Date.now() + 6 * 86400000), acceptedBy: null, acceptedAt: null });
 async function invite() { await setDoc(doc(db('alice'), 'invitations', code), invitation()); }
-async function join(uid, invitationCode = code, fid = 'alpha') {
+async function join(uid, invitationCode = code, fid = 'alpha', displayName = null) {
   const client = db(uid), batch = writeBatch(client);
   batch.set(doc(client, 'memberships', uid), membership(fid, invitationCode));
   batch.update(doc(client, 'invitations', invitationCode), { acceptedBy: uid, acceptedAt: serverTimestamp() });
-  batch.set(doc(client, 'families', fid, 'members', uid), memberProfile(uid));
+  batch.set(doc(client, 'families', fid, 'members', uid),
+    memberProfile(uid, 'member', serverTimestamp(), displayName));
   await batch.commit();
 }
 async function transfer(client, fid, oldOwner, newOwner, familyChanges = {}) {
@@ -61,7 +64,9 @@ after(async () => { if (env) await env.cleanup(); });
 
 test('family creation is atomic and limited to one family per user', async () => {
   await assertSucceeds(getDoc(doc(db('alice'), 'families/alpha')));
-  await assertSucceeds(create('charlie', 'active-family', 'active'));
+  await assertSucceeds(create('charlie', 'active-family', 'active', 'Charlie'));
+  assert.equal((await getDoc(doc(db('charlie'),
+    'families/active-family/members/charlie'))).data().displayName, 'Charlie');
   await assertFails(create('alice', 'second'));
   await assertFails(setDoc(doc(db('bob'), 'families/orphan'), family('bob')));
   await assertFails(setDoc(doc(db('bob'), 'memberships/bob'), membership('alpha')));
@@ -112,7 +117,9 @@ test('join consumes a code atomically and grants only its family', async () => {
   await assertFails(updateDoc(doc(db('bob'), 'invitations', code), {
     acceptedBy: 'bob', acceptedAt: serverTimestamp(),
   }));
-  await assertSucceeds(join('bob'));
+  await assertSucceeds(join('bob', code, 'alpha', 'Bob'));
+  assert.equal((await getDoc(doc(db('bob'),
+    'families/alpha/members/bob'))).data().displayName, 'Bob');
   await assertSucceeds(getDoc(doc(db('bob'), 'families/alpha')));
   await assertFails(join('eve'));
   await create('charlie', 'beta');
@@ -140,6 +147,29 @@ test('member profiles cannot be forged, changed, or removed', async () => {
   batch.update(doc(bob, 'invitations', code), { acceptedBy: 'bob', acceptedAt: serverTimestamp() });
   batch.set(doc(bob, 'families/alpha/members/bob'), memberProfile('bob', 'owner'));
   await assertFails(batch.commit());
+});
+
+test('members can set only their own valid display name', async () => {
+  const aliceProfile = doc(db('alice'), 'families/alpha/members/alice');
+  await assertSucceeds(updateDoc(aliceProfile, { displayName: 'Alice Ä' }));
+  await assertFails(updateDoc(aliceProfile, { displayName: '' }));
+  await assertFails(updateDoc(aliceProfile, { displayName: ' Alice' }));
+  await assertFails(updateDoc(aliceProfile, { displayName: 'Alice ' }));
+  await assertFails(updateDoc(aliceProfile, { displayName: 'a'.repeat(41) }));
+  await assertFails(updateDoc(aliceProfile, {
+    displayName: 'Alice', role: 'member',
+  }));
+
+  await invite();
+  await assertSucceeds(join('bob', code, 'alpha', 'Bob'));
+  await assertSucceeds(updateDoc(
+    doc(db('bob'), 'families/alpha/members/bob'),
+    { displayName: 'Bobby' },
+  ));
+  await assertFails(updateDoc(
+    doc(db('alice'), 'families/alpha/members/bob'),
+    { displayName: 'Manipuliert' },
+  ));
 });
 
 test('a member can leave only by atomically removing both membership records', async () => {

@@ -147,7 +147,7 @@ class _FamilyScreenState extends State<FamilyScreen> {
           disposeStore: true,
           reminders: widget.reminders,
           memberLabels: {
-            for (final member in _members) member.id: member.email,
+            for (final member in _members) member.id: member.displayLabel,
           },
         ),
       ),
@@ -569,14 +569,15 @@ class _FamilyScreenState extends State<FamilyScreen> {
         member.isOwner ? Icons.shield_outlined : Icons.person_outline,
       ),
     ),
-    title: Text(member.email),
+    title: Text(member.displayLabel),
+    subtitle: Text(member.email),
     trailing: Row(
       mainAxisSize: MainAxisSize.min,
       children: [
         Chip(label: Text(member.isOwner ? 'Besitzer' : 'Mitglied')),
         if (!member.isOwner && widget.repository!.canInvite(_family!))
           IconButton(
-            tooltip: 'Besitz an ${member.email} übertragen',
+            tooltip: 'Besitz an ${member.displayLabel} übertragen',
             onPressed: _busy ? null : () => _transferOwnership(member),
             icon: const Icon(Icons.manage_accounts_outlined),
           ),

@@ -28,11 +28,21 @@ class FamilyMember {
     required this.id,
     required this.email,
     required this.isOwner,
+    this.displayName,
   });
 
   final String id;
   final String email;
   final bool isOwner;
+  final String? displayName;
+
+  String get displayLabel {
+    final name = displayName?.trim();
+    if (name != null && name.isNotEmpty) return name;
+    final at = email.indexOf('@');
+    if (at > 0) return email.substring(0, at);
+    return email.trim().isEmpty ? 'Mitglied' : email;
+  }
 }
 
 class FamilyFailure implements Exception {
@@ -46,6 +56,7 @@ abstract interface class FamilyRepository {
   Future<Family> createFamily(String name);
   Future<Family> joinFamily(String code);
   Future<List<FamilyMember>> members(Family family);
+  Future<void> updateOwnDisplayName(String displayName);
   Future<FamilyInvitation> invite(Family family);
   Future<List<FamilyInvitation>> invitations(Family family);
   Future<void> revokeInvitation(String code);

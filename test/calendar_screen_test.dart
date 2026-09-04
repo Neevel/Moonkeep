@@ -98,6 +98,18 @@ void main() {
       expect(multiple.kind, CalendarAudienceKind.multiple);
       expect(multiple.indicatorColors, hasLength(2));
       expect(unknown, same(MemberColorResolver.unknown));
+      final renamed = MemberColorResolver.forEvent(
+        eventAt(
+          'renamed',
+          'Person',
+          day,
+          8,
+          9,
+          assignedMemberIds: const ['member-a'],
+        ),
+        const {'member-a': 'Neuer Name'},
+      );
+      expect(renamed.background, single.background);
     },
   );
 
@@ -751,10 +763,7 @@ void main() {
       MaterialApp(
         home: CalendarScreen(
           store: store,
-          memberLabels: const {
-            'member-a': 'marcel@example.com',
-            'member-b': 'claire@example.com',
-          },
+          memberLabels: const {'member-a': 'Marcel', 'member-b': 'Sandra'},
         ),
       ),
     );
@@ -780,10 +789,10 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(store.allEvents.single.assignedMemberIds, {'member-a'});
-    expect(find.textContaining('Betrifft: marcel@example.com'), findsOneWidget);
+    expect(find.textContaining('Betrifft: Marcel'), findsOneWidget);
     expect(find.byKey(const ValueKey('member-color-legend')), findsOneWidget);
-    expect(find.text('marcel'), findsOneWidget);
-    expect(find.text('claire'), findsOneWidget);
+    expect(find.text('Marcel'), findsOneWidget);
+    expect(find.text('Sandra'), findsOneWidget);
     final agendaAudience = find.descendant(
       of: find.byKey(ValueKey('agenda-audience-${store.allEvents.single.id}')),
       matching: find.byType(Container),
@@ -807,10 +816,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(store.allEvents.single.assignedMemberIds, {'member-a', 'member-b'});
-    expect(
-      find.textContaining('Betrifft: claire@example.com, marcel@example.com'),
-      findsOneWidget,
-    );
+    expect(find.textContaining('Betrifft: Marcel, Sandra'), findsOneWidget);
   });
 
   testWidgets('shows a safe fallback for an unknown assigned member', (

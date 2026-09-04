@@ -41,6 +41,11 @@ class FirestoreFamilyRepository implements FamilyRepository {
     return email;
   }
 
+  String? _displayName() {
+    final name = auth.currentUser?.displayName?.trim();
+    return name == null || name.isEmpty || name.length > 40 ? null : name;
+  }
+
   void _checkSession(String uid) {
     if (_uid() != uid) {
       throw const FamilyFailure(
@@ -109,13 +114,20 @@ class FirestoreFamilyRepository implements FamilyRepository {
 
   Future<void> _ensureMemberProfile(Family family, String uid) async {
     final email = _email();
+    final displayName = _displayName();
     await db.runTransaction((tx) async {
       _checkSession(uid);
       final membershipRef = db.doc('memberships/$uid');
       final profileRef = db.doc('families/${family.id}/members/$uid');
       final membership = await tx.get(membershipRef);
       final profile = await tx.get(profileRef);
-      if (profile.exists) return;
+      if (profile.exists) {
+        if (displayName != null &&
+            profile.data()?['displayName'] != displayName) {
+          tx.update(profileRef, {'displayName': displayName});
+        }
+        return;
+      }
       final joinedAt = membership.data()?['joinedAt'];
       if (joinedAt is! Timestamp) {
         throw const FamilyFailure(
@@ -126,6 +138,7 @@ class FirestoreFamilyRepository implements FamilyRepository {
         'email': email,
         'role': family.ownerId == uid ? 'owner' : 'member',
         'joinedAt': joinedAt,
+        'displayName': ?displayName,
       });
     });
     _checkSession(uid);
@@ -165,6 +178,7 @@ class FirestoreFamilyRepository implements FamilyRepository {
         'email': _email(),
         'role': 'owner',
         'joinedAt': FieldValue.serverTimestamp(),
+        'displayName': ?_displayName(),
       });
     });
     _checkSession(uid);
@@ -210,6 +224,7 @@ class FirestoreFamilyRepository implements FamilyRepository {
         'email': _email(),
         'role': 'member',
         'joinedAt': FieldValue.serverTimestamp(),
+        'displayName': ?_displayName(),
       });
     });
     _checkSession(uid);
@@ -229,13 +244,46 @@ class FirestoreFamilyRepository implements FamilyRepository {
         id: item.id,
         email: data['email'] as String,
         isOwner: data['role'] == 'owner',
+        displayName: data['displayName'] as String?,
       );
     }).toList();
     members.sort((a, b) {
       if (a.isOwner != b.isOwner) return a.isOwner ? -1 : 1;
-      return a.email.toLowerCase().compareTo(b.email.toLowerCase());
+      return a.displayLabel.toLowerCase().compareTo(
+        b.displayLabel.toLowerCase(),
+      );
     });
     return members;
+  }
+
+  @override
+  Future<void> updateOwnDisplayName(String displayName) async {
+    final uid = _uid();
+    displayName = displayName.trim();
+    if (displayName.isEmpty || displayName.length > 40) {
+      throw const FamilyFailure(
+        'Bitte einen Anzeigenamen mit 1 bis 40 Zeichen eingeben.',
+      );
+    }
+    await db.runTransaction((tx) async {
+      _checkSession(uid);
+      final membershipRef = db.doc('memberships/$uid');
+      final membership = await tx.get(membershipRef);
+      if (!membership.exists) return;
+      final familyId = membership.data()?['familyId'];
+      if (familyId is! String) return;
+      final familyRef = db.doc('families/$familyId');
+      final profileRef = familyRef.collection('members').doc(uid);
+      final family = await tx.get(familyRef);
+      final profile = await tx.get(profileRef);
+      if (!family.exists ||
+          family.data()?['status'] == 'dissolved' ||
+          !profile.exists) {
+        return;
+      }
+      tx.update(profileRef, {'displayName': displayName});
+    });
+    _checkSession(uid);
   }
 
   @override

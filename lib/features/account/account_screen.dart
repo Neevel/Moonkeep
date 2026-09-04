@@ -3,9 +3,15 @@ import 'package:flutter/material.dart';
 import 'auth_repository.dart';
 
 class AccountScreen extends StatefulWidget {
-  const AccountScreen({super.key, this.auth, this.setupError});
+  const AccountScreen({
+    super.key,
+    this.auth,
+    this.syncDisplayName,
+    this.setupError,
+  });
 
   final AuthRepository? auth;
+  final Future<void> Function(String displayName)? syncDisplayName;
   final String? setupError;
 
   @override
@@ -15,6 +21,7 @@ class AccountScreen extends StatefulWidget {
 class _AccountScreenState extends State<AccountScreen> {
   final _formKey = GlobalKey<FormState>();
   final _email = TextEditingController();
+  final _displayName = TextEditingController();
   final _password = TextEditingController();
   final _confirmation = TextEditingController();
   late final Stream<AccountIdentity?>? _users = widget.auth?.userChanges;
@@ -27,6 +34,7 @@ class _AccountScreenState extends State<AccountScreen> {
   @override
   void dispose() {
     _email.dispose();
+    _displayName.dispose();
     _password.dispose();
     _confirmation.dispose();
     super.dispose();
@@ -41,6 +49,7 @@ class _AccountScreenState extends State<AccountScreen> {
     Future<void> Function() action, {
     String? success,
     bool notify = false,
+    String? failure,
   }) async {
     if (_busy) return;
     setState(() {
@@ -69,7 +78,8 @@ class _AccountScreenState extends State<AccountScreen> {
       setState(() {
         _message = error is AuthFailure
             ? error.message
-            : 'Die Anfrage ist fehlgeschlagen. Bitte versuche es erneut.';
+            : failure ??
+                  'Die Anfrage ist fehlgeschlagen. Bitte versuche es erneut.';
         _isError = true;
       });
     } finally {
@@ -84,12 +94,31 @@ class _AccountScreenState extends State<AccountScreen> {
     final password = _password.text;
     _run(
       () => _register
-          ? auth.register(email, password)
+          ? auth.register(_displayName.text.trim(), email, password)
           : auth.signIn(email, password),
       success: _register
           ? 'Konto erstellt. Bitte bestätige als Nächstes deine E-Mail-Adresse.'
           : 'Du bist jetzt angemeldet.',
       notify: !_register,
+    );
+  }
+
+  Future<void> _changeDisplayName(AccountIdentity user) async {
+    final name = await showDialog<String>(
+      context: context,
+      builder: (_) => _DisplayNameDialog(initialName: user.displayLabel),
+    );
+    if (name == null || !mounted) return;
+    await _run(
+      () async {
+        await widget.auth!.updateDisplayName(name);
+        if (user.emailVerified) {
+          await widget.syncDisplayName?.call(name);
+        }
+      },
+      success: 'Anzeigename gespeichert.',
+      notify: true,
+      failure: 'Anzeigename konnte nicht gespeichert werden.',
     );
   }
 
@@ -214,6 +243,19 @@ class _AccountScreenState extends State<AccountScreen> {
             style: Theme.of(context).textTheme.titleLarge,
           ),
           const SizedBox(height: 20),
+          if (_register) ...[
+            TextFormField(
+              key: const ValueKey('registration-display-name'),
+              controller: _displayName,
+              enabled: !_busy,
+              maxLength: 40,
+              textCapitalization: TextCapitalization.words,
+              autofillHints: const [AutofillHints.name],
+              decoration: const InputDecoration(labelText: 'Name'),
+              validator: _validateDisplayName,
+            ),
+            const SizedBox(height: 16),
+          ],
           TextFormField(
             controller: _email,
             enabled: !_busy,
@@ -296,6 +338,7 @@ class _AccountScreenState extends State<AccountScreen> {
                     _register = !_register;
                     _password.clear();
                     _confirmation.clear();
+                    _displayName.clear();
                     _showPassword = false;
                     _message = null;
                     _formKey.currentState?.reset();
@@ -317,6 +360,17 @@ class _AccountScreenState extends State<AccountScreen> {
       Text('Angemeldet', style: Theme.of(context).textTheme.titleLarge),
       const SizedBox(height: 8),
       Text(user.email),
+      const SizedBox(height: 16),
+      Text('Anzeigename', style: Theme.of(context).textTheme.titleMedium),
+      const SizedBox(height: 4),
+      Text(user.displayLabel),
+      Align(
+        alignment: Alignment.centerLeft,
+        child: TextButton(
+          onPressed: _busy ? null : () => _changeDisplayName(user),
+          child: const Text('Ändern'),
+        ),
+      ),
       const SizedBox(height: 16),
       Text(
         user.emailVerified
@@ -370,4 +424,64 @@ class _AccountScreenState extends State<AccountScreen> {
       ),
     ],
   );
+}
+
+class _DisplayNameDialog extends StatefulWidget {
+  const _DisplayNameDialog({required this.initialName});
+
+  final String initialName;
+
+  @override
+  State<_DisplayNameDialog> createState() => _DisplayNameDialogState();
+}
+
+class _DisplayNameDialogState extends State<_DisplayNameDialog> {
+  final _formKey = GlobalKey<FormState>();
+  late final TextEditingController _controller = TextEditingController(
+    text: widget.initialName,
+  );
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => AlertDialog(
+    title: const Text('Anzeigename ändern'),
+    content: Form(
+      key: _formKey,
+      child: TextFormField(
+        key: const ValueKey('display-name-dialog-field'),
+        controller: _controller,
+        autofocus: true,
+        maxLength: 40,
+        textCapitalization: TextCapitalization.words,
+        decoration: const InputDecoration(labelText: 'Anzeigename'),
+        validator: _validateDisplayName,
+      ),
+    ),
+    actions: [
+      TextButton(
+        onPressed: () => Navigator.of(context).pop(),
+        child: const Text('Abbrechen'),
+      ),
+      FilledButton(
+        onPressed: () {
+          if (_formKey.currentState!.validate()) {
+            Navigator.of(context).pop(_controller.text.trim());
+          }
+        },
+        child: const Text('Speichern'),
+      ),
+    ],
+  );
+}
+
+String? _validateDisplayName(String? value) {
+  final name = value?.trim() ?? '';
+  if (name.isEmpty) return 'Bitte gib deinen Namen ein.';
+  if (name.length > 40) return 'Bitte verwende höchstens 40 Zeichen.';
+  return null;
 }

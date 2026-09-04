@@ -4,11 +4,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:moonkeep/app.dart';
 import 'package:moonkeep/features/account/auth_repository.dart';
+import 'package:moonkeep/features/account/account_screen.dart';
 
 class FakeAuthRepository implements AuthRepository {
   final _changes = StreamController<AccountIdentity?>.broadcast();
   AccountIdentity? user;
   String? lastEmail;
+  String? lastDisplayName;
   int signInCalls = 0;
   int registerCalls = 0;
   int resetCalls = 0;
@@ -39,9 +41,31 @@ class FakeAuthRepository implements AuthRepository {
   }
 
   @override
-  Future<void> register(String email, String password) async {
+  Future<void> register(
+    String displayName,
+    String email,
+    String password,
+  ) async {
     registerCalls++;
+    lastDisplayName = displayName;
     _signIn(email);
+    user = AccountIdentity(
+      email: email,
+      emailVerified: false,
+      displayName: displayName,
+    );
+    if (emitChanges) publishUser();
+  }
+
+  @override
+  Future<void> updateDisplayName(String displayName) async {
+    lastDisplayName = displayName;
+    user = AccountIdentity(
+      email: user!.email,
+      emailVerified: user!.emailVerified,
+      displayName: displayName,
+    );
+    if (emitChanges) publishUser();
   }
 
   @override
@@ -55,7 +79,11 @@ class FakeAuthRepository implements AuthRepository {
 
   @override
   Future<void> reloadUser() async {
-    user = AccountIdentity(email: user!.email, emailVerified: true);
+    user = AccountIdentity(
+      email: user!.email,
+      emailVerified: true,
+      displayName: user!.displayName,
+    );
     if (emitChanges) publishUser();
   }
 
@@ -165,6 +193,7 @@ void main() {
       await tester.tap(button('Registrieren'));
       await tester.pumpAndSettle();
       expect(auth.registerCalls, 0);
+      expect(find.text('Bitte gib deinen Namen ein.'), findsOneWidget);
       expect(
         find.text('Die Passwörter stimmen nicht überein.'),
         findsOneWidget,
@@ -173,9 +202,14 @@ void main() {
         find.widgetWithText(TextFormField, 'Passwort wiederholen'),
         'password-test',
       );
+      await tester.enterText(
+        find.byKey(const ValueKey('registration-display-name')),
+        '  Marcel  ',
+      );
       await tester.tap(button('Registrieren'));
       await tester.pumpAndSettle();
       expect(auth.registerCalls, 1);
+      expect(auth.lastDisplayName, 'Marcel');
       expect(
         find.text(
           'Konto erstellt. Bitte bestätige als Nächstes deine E-Mail-Adresse.',
@@ -192,6 +226,51 @@ void main() {
       expect(find.text('Bestätigungsmail senden'), findsNothing);
     },
   );
+
+  testWidgets('shows and changes a trimmed display name', (tester) async {
+    tester.view.physicalSize = const Size(500, 1200);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final auth = FakeAuthRepository()
+      ..user = const AccountIdentity(
+        email: 'marcel.jeske@example.test',
+        emailVerified: true,
+      );
+    addTearDown(auth.dispose);
+    String? synchronizedName;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: AccountScreen(
+          auth: auth,
+          syncDisplayName: (name) async => synchronizedName = name,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('marcel.jeske'), findsOneWidget);
+    await tester.tap(find.text('Ändern'));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const ValueKey('display-name-dialog-field')),
+      '   ',
+    );
+    await tester.tap(find.widgetWithText(FilledButton, 'Speichern'));
+    await tester.pumpAndSettle();
+    expect(find.text('Bitte gib deinen Namen ein.'), findsOneWidget);
+
+    await tester.enterText(
+      find.byKey(const ValueKey('display-name-dialog-field')),
+      '  Marcel  ',
+    );
+    await tester.tap(find.widgetWithText(FilledButton, 'Speichern'));
+    await tester.pumpAndSettle();
+    expect(auth.lastDisplayName, 'Marcel');
+    expect(synchronizedName, 'Marcel');
+    expect(find.text('Anzeigename gespeichert.'), findsOneWidget);
+    expect(find.text('Marcel'), findsOneWidget);
+  });
 
   testWidgets('password reset validates email and gives a neutral response', (
     tester,

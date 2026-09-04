@@ -91,6 +91,11 @@ service cloud.firestore {
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status'])
           && !existsAfter(profile(request.auth.uid));
       }
+      function validDisplayName(value) {
+        return value is string
+          && value.size() >= 1 && value.size() <= 40
+          && value.matches('^\\S(.*\\S)?$');
+      }
       allow get: if member(fid);
       allow create: if verified()
         && request.resource.data.keys().hasOnly(['name', 'ownerId', 'status', 'timeZone', 'createdAt'])
@@ -108,9 +113,11 @@ service cloud.firestore {
 
       match /members/{memberId} {
         function validMemberProfile() {
-          return request.resource.data.keys().hasOnly(['email', 'role', 'joinedAt'])
+          return request.resource.data.keys().hasOnly(['email', 'role', 'joinedAt', 'displayName'])
             && request.auth.token.email is string
             && request.resource.data.email == request.auth.token.email
+            && (!request.resource.data.keys().hasAny(['displayName'])
+              || validDisplayName(request.resource.data.displayName))
             && request.resource.data.joinedAt
               == getAfter(profile(request.auth.uid)).data.joinedAt
             && request.resource.data.role
@@ -134,6 +141,14 @@ service cloud.firestore {
             && getAfter(memberPath(fid, oldOwner)).data.role == 'member'
             && getAfter(memberPath(fid, newOwner)).data.role == 'owner';
         }
+        function validOwnDisplayNameUpdate() {
+          return verified() && activeMember(fid)
+            && memberId == request.auth.uid
+            && request.resource.data.keys().hasAll(['displayName'])
+            && validDisplayName(request.resource.data.displayName)
+            && request.resource.data.diff(resource.data).affectedKeys()
+              .hasOnly(['displayName']);
+        }
         allow read: if activeMember(fid);
         allow create: if verified()
           && memberId == request.auth.uid
@@ -144,7 +159,8 @@ service cloud.firestore {
           && get(profile(request.auth.uid)).data.familyId == fid
           && get(familyPath(fid)).data.ownerId != request.auth.uid
           && !existsAfter(profile(request.auth.uid));
-        allow update: if validOwnershipRoleTransfer();
+        allow update: if validOwnershipRoleTransfer()
+          || validOwnDisplayNameUpdate();
       }
 
       match /events/{eid} {

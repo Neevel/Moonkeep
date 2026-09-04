@@ -17,6 +17,7 @@ class FirebaseAuthRepository implements AuthRepository {
       : AccountIdentity(
           email: user.email ?? '',
           emailVerified: user.emailVerified,
+          displayName: user.displayName,
         );
 
   @override
@@ -36,12 +37,18 @@ class FirebaseAuthRepository implements AuthRepository {
   });
 
   @override
-  Future<void> register(String email, String password) => _guard(() async {
-    await _auth.createUserWithEmailAndPassword(
-      email: email,
-      password: password,
-    );
-  });
+  Future<void> register(String displayName, String email, String password) =>
+      _guard(() async {
+        final credential = await _auth.createUserWithEmailAndPassword(
+          email: email,
+          password: password,
+        );
+        await credential.user?.updateDisplayName(displayName);
+      });
+
+  @override
+  Future<void> updateDisplayName(String displayName) =>
+      _guard(() => _requireUser().updateDisplayName(displayName));
 
   @override
   Future<void> sendPasswordReset(String email) => _guard(() async {

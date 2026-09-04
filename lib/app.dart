@@ -55,8 +55,11 @@ class MoonkeepApp extends StatelessWidget {
             autoOpenCalendar: autoOpenCalendar,
           ),
     routes: {
-      '/account': (context) =>
-          AccountScreen(auth: auth, setupError: accountSetupError),
+      '/account': (context) => AccountScreen(
+        auth: auth,
+        syncDisplayName: family?.updateOwnDisplayName,
+        setupError: accountSetupError,
+      ),
       '/family': (context) =>
           FamilyScreen(auth: auth, repository: family, reminders: reminders),
     },
