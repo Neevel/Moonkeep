@@ -18,7 +18,7 @@ void main() {
     end: DateTime(2026, 8, 28, hour + 1),
   );
 
-  test('validates title and same-day time interval', () {
+  test('validates title and chronological time interval', () {
     expect(() => event('1', title: '  '), throwsArgumentError);
     expect(
       () => CalendarEvent(id: '1', title: 'Test', start: day, end: day),
@@ -29,11 +29,56 @@ void main() {
         id: '1',
         title: 'Test',
         start: day,
-        end: day.add(const Duration(days: 1)),
+        end: day.subtract(const Duration(days: 1)),
       ),
       throwsArgumentError,
     );
     expect(event('1', title: '  Ausflug  ').title, 'Ausflug');
+  });
+
+  test('multi-day events are inclusive and remain one serialized event', () {
+    final event = CalendarEvent(
+      id: 'trip',
+      title: 'Reise',
+      start: DateTime(2026, 9, 4, 18),
+      end: DateTime(2026, 9, 6, 12),
+      assignedMemberIds: const ['member-a'],
+    );
+    expect(event.isMultiDay, isTrue);
+    expect(event.occursOn(DateTime(2026, 9, 3)), isFalse);
+    expect(event.occursOn(DateTime(2026, 9, 4)), isTrue);
+    expect(event.occursOn(DateTime(2026, 9, 5)), isTrue);
+    expect(event.occursOn(DateTime(2026, 9, 6)), isTrue);
+    expect(event.occursOn(DateTime(2026, 9, 7)), isFalse);
+
+    final restored = CalendarEvent.fromJson(
+      jsonDecode(jsonEncode(event.toJson())) as Map<String, dynamic>,
+    );
+    expect(restored.start, event.start);
+    expect(restored.end, event.end);
+    expect(restored.isMultiDay, isTrue);
+    expect(
+      () => CalendarEvent(
+        id: 'invalid-series',
+        title: 'Ungültig',
+        start: event.start,
+        end: event.end,
+        recurrence: EventRecurrence.daily,
+      ),
+      throwsArgumentError,
+    );
+  });
+
+  test('all-day multi-day events have no reminder', () {
+    final event = CalendarEvent(
+      id: 'holiday',
+      title: 'Urlaub',
+      start: DateTime(2026, 9, 10, 9),
+      end: DateTime(2026, 9, 17, 10),
+      isAllDay: true,
+    );
+    expect(event.occursOn(DateTime(2026, 9, 14)), isTrue);
+    expect(event.reminderMinutesBefore, isNull);
   });
 
   test('round-trips a complete event', () {

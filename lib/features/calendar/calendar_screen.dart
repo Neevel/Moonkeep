@@ -541,7 +541,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
                     : Icons.event_outlined,
               ),
               subtitle: Text(
-                '${event.isAllDay ? 'Ganztägig' : '${TimeOfDay.fromDateTime(event.start).format(context)} – ${TimeOfDay.fromDateTime(event.end).format(context)}'}'
+                '${_scheduleLabel(context, event)}'
                 '\nBetrifft: ${_assignmentLabel(event)}'
                 '${event.recurrence == EventRecurrence.none ? '' : '\n${event.recurrence.label}${event.recurrenceEnd == null ? '' : ' bis ${MaterialLocalizations.of(context).formatShortDate(event.recurrenceEnd!)}'}'}'
                 '${event.notes.isEmpty ? '' : '\n${event.notes}'}',
@@ -566,6 +566,20 @@ class _CalendarScreenState extends State<CalendarScreen> {
             .toList()
           ..sort();
     return labels.join(', ');
+  }
+
+  String _scheduleLabel(BuildContext context, CalendarEvent event) {
+    if (!event.isMultiDay) {
+      return event.isAllDay
+          ? 'Ganztägig'
+          : '${TimeOfDay.fromDateTime(event.start).format(context)} – ${TimeOfDay.fromDateTime(event.end).format(context)}';
+    }
+    final dates = MaterialLocalizations.of(context);
+    final startDate = dates.formatShortDate(event.start);
+    final endDate = dates.formatShortDate(event.end);
+    if (event.isAllDay) return '$startDate – $endDate\nGanztägig';
+    return '$startDate ${TimeOfDay.fromDateTime(event.start).format(context)} – '
+        '$endDate ${TimeOfDay.fromDateTime(event.end).format(context)}';
   }
 
   Widget _memberLegend() {

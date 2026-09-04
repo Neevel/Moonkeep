@@ -13,6 +13,11 @@ Map<String, Object?> sharedEventData(CalendarEvent event) => {
   'year': event.start.year,
   'month': event.start.month,
   'day': event.start.day,
+  if (event.isMultiDay) ...{
+    'endYear': event.end.year,
+    'endMonth': event.end.month,
+    'endDay': event.end.day,
+  },
   'startMinute': event.start.hour * 60 + event.start.minute,
   'endMinute': event.end.hour * 60 + event.end.minute,
   'importance': event.importance.name,
@@ -37,6 +42,7 @@ CalendarEvent sharedEvent(String id, Map<String, dynamic> data) {
       m = data['month'] as int,
       d = data['day'] as int;
   final start = data['startMinute'] as int, end = data['endMinute'] as int;
+  final endDateValues = [data['endYear'], data['endMonth'], data['endDay']];
   final importance = EventImportance.values.firstWhere(
     (value) => value.name == data['importance'],
     orElse: () => EventImportance.normal,
@@ -54,8 +60,9 @@ CalendarEvent sharedEvent(String id, Map<String, dynamic> data) {
       y < 1900 ||
       y > 2100 ||
       start < 0 ||
+      start >= 1440 ||
+      end < 0 ||
       end >= 1440 ||
-      end <= start ||
       (reminder != null &&
           (reminder is! int || ![0, 10, 30, 60, 1440].contains(reminder))) ||
       (allDay != null && allDay is! bool) ||
@@ -69,7 +76,31 @@ CalendarEvent sharedEvent(String id, Map<String, dynamic> data) {
       (data['revision'] as int) < 1) {
     throw const FormatException('Ungültiger gemeinsamer Termin.');
   }
+  var endDate = date;
+  if (endDateValues.any((value) => value != null)) {
+    if (endDateValues.any((value) => value is! int)) {
+      throw const FormatException('Ungültiges Terminende.');
+    }
+    endDate = DateTime.utc(
+      endDateValues[0]! as int,
+      endDateValues[1]! as int,
+      endDateValues[2]! as int,
+    );
+    if (endDate.year != endDateValues[0] ||
+        endDate.month != endDateValues[1] ||
+        endDate.day != endDateValues[2] ||
+        !endDate.isAfter(date)) {
+      throw const FormatException('Ungültiges Terminende.');
+    }
+  } else if (end <= start) {
+    throw const FormatException('Ungültiges Terminende.');
+  }
   if (recurrenceData != null) {
+    if (endDate.isAfter(date)) {
+      throw const FormatException(
+        'Mehrtagestermine können nicht wiederholt werden.',
+      );
+    }
     if (recurrenceData is! Map<String, dynamic>) {
       throw const FormatException('Ungültige Terminwiederholung.');
     }
@@ -108,7 +139,7 @@ CalendarEvent sharedEvent(String id, Map<String, dynamic> data) {
     title: data['title'] as String,
     notes: data['notes'] as String,
     start: date.add(Duration(minutes: start)),
-    end: date.add(Duration(minutes: end)),
+    end: endDate.add(Duration(minutes: end)),
     revision: data['revision'] as int,
     importance: importance,
     reminderMinutesBefore: reminder as int?,

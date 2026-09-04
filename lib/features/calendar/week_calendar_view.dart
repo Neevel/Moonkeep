@@ -182,7 +182,7 @@ class _WeekDaySection extends StatelessWidget {
                             for (final event in timed)
                               _event(
                                 event,
-                                timeLabel: _time(event.start),
+                                timeLabel: _timeLabel(event, day),
                                 memberLabels: memberLabels,
                                 key: 'week-event-${event.id}-${_dayId(day)}',
                               ),
@@ -212,6 +212,14 @@ class _WeekDaySection extends StatelessWidget {
       onTap: () => onEventSelected(event, day),
     ),
   );
+
+  String _timeLabel(CalendarEvent event, DateTime day) {
+    if (!event.isMultiDay || isSameDay(day, event.start)) {
+      return _time(event.start);
+    }
+    if (isSameDay(day, event.end)) return 'bis ${_time(event.end)}';
+    return 'läuft';
+  }
 }
 
 class _CompactEvent extends StatelessWidget {

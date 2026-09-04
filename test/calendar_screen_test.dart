@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
@@ -6,6 +7,7 @@ import 'package:moonkeep/app.dart';
 import 'package:moonkeep/features/calendar/calendar_event.dart';
 import 'package:moonkeep/features/calendar/calendar_screen.dart';
 import 'package:moonkeep/features/calendar/calendar_store.dart';
+import 'package:moonkeep/features/calendar/event_editor.dart';
 import 'package:moonkeep/features/calendar/member_color_resolver.dart';
 
 void main() {
@@ -34,11 +36,17 @@ void main() {
     EventRecurrence recurrence = EventRecurrence.none,
     EventImportance importance = EventImportance.normal,
     Iterable<String> assignedMemberIds = const [],
+    DateTime? endDay,
   }) => CalendarEvent(
     id: id,
     title: title,
     start: DateTime(day.year, day.month, day.day, startHour),
-    end: DateTime(day.year, day.month, day.day, endHour),
+    end: DateTime(
+      (endDay ?? day).year,
+      (endDay ?? day).month,
+      (endDay ?? day).day,
+      endHour,
+    ),
     isAllDay: isAllDay,
     recurrence: recurrence,
     importance: importance,
@@ -246,11 +254,12 @@ void main() {
     await tester.pumpAndSettle();
     await tester.enterText(find.byType(TextFormField).first, 'Geburtstag');
     final allDaySwitch = find.widgetWithText(SwitchListTile, 'Ganztägig');
-    expect(find.textContaining('Beginn:'), findsOneWidget);
+    expect(find.byKey(const ValueKey('event-start-time')), findsOneWidget);
+    expect(find.byKey(const ValueKey('event-end-time')), findsOneWidget);
     await tester.tap(allDaySwitch);
     await tester.pumpAndSettle();
-    expect(find.textContaining('Beginn:'), findsNothing);
-    expect(find.textContaining('Ende:'), findsNothing);
+    expect(find.byKey(const ValueKey('event-start-time')), findsNothing);
+    expect(find.byKey(const ValueKey('event-end-time')), findsNothing);
     expect(find.text('Erinnerung'), findsNothing);
     await tester.tap(find.text('Speichern'));
     await tester.pumpAndSettle();
@@ -726,6 +735,98 @@ void main() {
     );
   });
 
+  testWidgets(
+    'multi-day events appear on every day with range labels and member filters',
+    (tester) async {
+      tester.view.physicalSize = const Size(700, 1200);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final today = DateUtils.dateOnly(DateTime.now());
+      final start = today.subtract(Duration(days: today.weekday - 1));
+      final middle = start.add(const Duration(days: 1));
+      final end = start.add(const Duration(days: 2));
+      final events = [
+        eventAt(
+          'trip',
+          'Reise',
+          start,
+          18,
+          12,
+          endDay: end,
+          assignedMemberIds: const ['member-a'],
+        ),
+        eventAt('holiday', 'Urlaub', start, 9, 10, endDay: end, isAllDay: true),
+        eventAt('middle-a', 'Mitte A', middle, 8, 9),
+      ];
+      await tester.pumpWidget(
+        MaterialApp(
+          home: CalendarScreen(
+            store: storeWithEvents(events),
+            memberLabels: const {'member-a': 'Marcel', 'member-b': 'Sandra'},
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      for (final day in [start, middle, end]) {
+        expect(
+          find.byKey(ValueKey('month-event-trip-${dayId(day)}')),
+          findsOneWidget,
+        );
+        expect(
+          find.byKey(ValueKey('month-event-holiday-${dayId(day)}')),
+          findsOneWidget,
+        );
+      }
+      expect(
+        find.byKey(
+          ValueKey(
+            'month-event-trip-${dayId(start.subtract(const Duration(days: 1)))}',
+          ),
+        ),
+        findsNothing,
+      );
+      expect(
+        find.byKey(ValueKey('month-more-${dayId(middle)}')),
+        findsOneWidget,
+      );
+
+      await tester.tap(find.byKey(ValueKey('month-day-${dayId(middle)}')));
+      await tester.pumpAndSettle();
+      final localizations = MaterialLocalizations.of(
+        tester.element(find.byType(Scaffold).first),
+      );
+      expect(
+        find.textContaining(
+          '${localizations.formatShortDate(start)} – ${localizations.formatShortDate(end)}',
+        ),
+        findsOneWidget,
+      );
+
+      await tester.tap(find.byKey(const ValueKey('member-filter-member-b')));
+      await tester.pumpAndSettle();
+      expect(agendaTile('Reise'), findsNothing);
+      expect(agendaTile('Urlaub'), findsOneWidget);
+      await tester.tap(find.byKey(const ValueKey('member-filter-member-a')));
+      await tester.pumpAndSettle();
+      expect(agendaTile('Reise'), findsOneWidget);
+      expect(agendaTile('Urlaub'), findsOneWidget);
+
+      await tester.tap(find.text('Woche'));
+      await tester.pumpAndSettle();
+      expect(find.text('18:00'), findsOneWidget);
+      expect(find.text('läuft'), findsOneWidget);
+      expect(find.text('bis 12:00'), findsOneWidget);
+      for (final day in [start, middle, end]) {
+        expect(
+          find.byKey(ValueKey('week-all-day-holiday-${dayId(day)}')),
+          findsOneWidget,
+        );
+      }
+    },
+  );
+
   testWidgets('calendar and editor fit a narrow phone viewport', (
     tester,
   ) async {
@@ -817,6 +918,102 @@ void main() {
 
     expect(store.allEvents.single.assignedMemberIds, {'member-a', 'member-b'});
     expect(find.textContaining('Betrifft: Marcel, Sandra'), findsOneWidget);
+  });
+
+  testWidgets('editor creates shortens and removes a multi-day range', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(600, 1200);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final store = emptyStore();
+    await store.load();
+    final start = DateTime(2026, 9, 10);
+
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(body: SizedBox(key: ValueKey('editor-host'))),
+      ),
+    );
+
+    Future<void> openEditor([CalendarEvent? event]) async {
+      unawaited(
+        Navigator.of(tester.element(find.byKey(const ValueKey('editor-host'))))
+            .push(
+              MaterialPageRoute<void>(
+                builder: (_) =>
+                    EventEditor(store: store, day: start, event: event),
+              ),
+            ),
+      );
+      await tester.pumpAndSettle();
+    }
+
+    Future<void> chooseEndDay(int day) async {
+      final okLabel = MaterialLocalizations.of(
+        tester.element(find.byType(Scaffold)),
+      ).okButtonLabel;
+      await tester.tap(find.byKey(const ValueKey('event-end-date')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('$day').last);
+      await tester.tap(find.text(okLabel));
+      await tester.pumpAndSettle();
+    }
+
+    await openEditor();
+    await tester.enterText(find.byType(TextFormField).first, 'Reise');
+    await chooseEndDay(12);
+    expect(
+      tester
+          .widget<DropdownButtonFormField<EventRecurrence>>(
+            find.byType(DropdownButtonFormField<EventRecurrence>),
+          )
+          .onChanged,
+      isNull,
+    );
+    expect(
+      find.text('Mehrtagestermine können derzeit nicht wiederholt werden.'),
+      findsOneWidget,
+    );
+    await tester.tap(find.text('Speichern'));
+    await tester.pumpAndSettle();
+    expect(store.allEvents.single.end.day, 12);
+
+    await openEditor(store.allEvents.single);
+    await chooseEndDay(11);
+    await tester.tap(find.text('Speichern'));
+    await tester.pumpAndSettle();
+    expect(store.allEvents.single.end.day, 11);
+
+    await openEditor(store.allEvents.single);
+    await chooseEndDay(10);
+    expect(
+      tester
+          .widget<DropdownButtonFormField<EventRecurrence>>(
+            find.byType(DropdownButtonFormField<EventRecurrence>),
+          )
+          .onChanged,
+      isNotNull,
+    );
+    await tester.tap(find.text('Speichern'));
+    await tester.pumpAndSettle();
+    expect(store.allEvents.single.isMultiDay, isFalse);
+
+    final recurring = CalendarEvent(
+      id: 'series',
+      title: 'Serie',
+      start: DateTime(2026, 9, 10, 9),
+      end: DateTime(2026, 9, 10, 10),
+      recurrence: EventRecurrence.weekly,
+    );
+    await openEditor(recurring);
+    expect(
+      tester
+          .widget<OutlinedButton>(find.byKey(const ValueKey('event-end-date')))
+          .onPressed,
+      isNull,
+    );
   });
 
   testWidgets(

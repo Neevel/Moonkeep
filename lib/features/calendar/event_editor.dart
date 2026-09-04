@@ -28,6 +28,7 @@ class _EventEditorState extends State<EventEditor> {
   late final TextEditingController _title;
   late final TextEditingController _notes;
   late DateTime _day;
+  late DateTime _endDay;
   late TimeOfDay _start;
   late TimeOfDay _end;
   late EventImportance _importance;
@@ -46,6 +47,7 @@ class _EventEditorState extends State<EventEditor> {
     _title = TextEditingController(text: event?.title ?? '');
     _notes = TextEditingController(text: event?.notes ?? '');
     _day = event?.start ?? widget.day;
+    _endDay = event?.end ?? _day;
     _start = event == null
         ? const TimeOfDay(hour: 9, minute: 0)
         : TimeOfDay.fromDateTime(event.start);
@@ -69,18 +71,50 @@ class _EventEditorState extends State<EventEditor> {
     super.dispose();
   }
 
-  DateTime _at(TimeOfDay time) => widget.store.isShared
-      ? DateTime.utc(_day.year, _day.month, _day.day, time.hour, time.minute)
-      : DateTime(_day.year, _day.month, _day.day, time.hour, time.minute);
+  DateTime _at(TimeOfDay time) => _atDay(_day, time);
 
-  Future<void> _chooseDate() async {
+  DateTime _atDay(DateTime day, TimeOfDay time) => widget.store.isShared
+      ? DateTime.utc(day.year, day.month, day.day, time.hour, time.minute)
+      : DateTime(day.year, day.month, day.day, time.hour, time.minute);
+
+  bool get _isMultiDay => !isSameDay(_day, _endDay);
+
+  Future<void> _chooseStartDate() async {
     final day = await showDatePicker(
       context: context,
       initialDate: _day,
       firstDate: DateTime(1900),
       lastDate: DateTime(2100, 12, 31),
     );
-    if (day != null && mounted) setState(() => _day = day);
+    if (day != null && mounted) {
+      setState(() {
+        final wasSingleDay = !_isMultiDay;
+        _day = day;
+        if (_recurrence != EventRecurrence.none ||
+            wasSingleDay ||
+            _isBefore(_endDay, _day)) {
+          _endDay = _day;
+        }
+      });
+    }
+  }
+
+  Future<void> _chooseEndDate() async {
+    final day = await showDatePicker(
+      context: context,
+      initialDate: _isBefore(_endDay, _day) ? _day : _endDay,
+      firstDate: DateTime(_day.year, _day.month, _day.day),
+      lastDate: DateTime(2100, 12, 31),
+    );
+    if (day != null && mounted) {
+      setState(() {
+        _endDay = day;
+        if (_isMultiDay) {
+          _recurrence = EventRecurrence.none;
+          _recurrenceEnd = null;
+        }
+      });
+    }
   }
 
   Future<void> _chooseTime(bool start) async {
@@ -124,7 +158,15 @@ class _EventEditorState extends State<EventEditor> {
 
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
-    if (!_isAllDay && !_at(_end).isAfter(_at(_start))) {
+    if (_isBefore(_endDay, _day)) {
+      setState(
+        () => _error = 'Das Enddatum darf nicht vor dem Startdatum liegen.',
+      );
+      return;
+    }
+    if (!_isAllDay &&
+        isSameDay(_day, _endDay) &&
+        !_atDay(_endDay, _end).isAfter(_at(_start))) {
       setState(() => _error = 'Das Ende muss nach dem Beginn liegen.');
       return;
     }
@@ -143,10 +185,10 @@ class _EventEditorState extends State<EventEditor> {
     });
     try {
       var start = _at(_start);
-      var end = _at(_end);
+      var end = _atDay(_endDay, _end);
       if (_isAllDay && !end.isAfter(start)) {
         start = _at(const TimeOfDay(hour: 9, minute: 0));
-        end = _at(const TimeOfDay(hour: 10, minute: 0));
+        end = _atDay(_endDay, const TimeOfDay(hour: 10, minute: 0));
       }
       final event = CalendarEvent(
         id: widget.event?.id ?? widget.store.newId(),
@@ -284,12 +326,31 @@ class _EventEditorState extends State<EventEditor> {
                 ),
                 const SizedBox(height: 16),
                 OutlinedButton.icon(
-                  onPressed: _busy ? null : _chooseDate,
+                  key: const ValueKey('event-start-date'),
+                  onPressed: _busy ? null : _chooseStartDate,
                   icon: const Icon(Icons.calendar_today_outlined),
                   label: Text(
-                    MaterialLocalizations.of(context).formatFullDate(_day),
+                    'Start: ${MaterialLocalizations.of(context).formatFullDate(_day)}',
                   ),
                 ),
+                const SizedBox(height: 8),
+                OutlinedButton.icon(
+                  key: const ValueKey('event-end-date'),
+                  onPressed: _busy || _recurrence != EventRecurrence.none
+                      ? null
+                      : _chooseEndDate,
+                  icon: const Icon(Icons.event_outlined),
+                  label: Text(
+                    'Ende: ${MaterialLocalizations.of(context).formatFullDate(_endDay)}',
+                  ),
+                ),
+                if (_recurrence != EventRecurrence.none)
+                  const Padding(
+                    padding: EdgeInsets.only(top: 6),
+                    child: Text(
+                      'Wiederkehrende Termine sind derzeit auf einen Tag begrenzt.',
+                    ),
+                  ),
                 const SizedBox(height: 16),
                 SwitchListTile(
                   contentPadding: EdgeInsets.zero,
@@ -305,10 +366,12 @@ class _EventEditorState extends State<EventEditor> {
                     runSpacing: 12,
                     children: [
                       OutlinedButton(
+                        key: const ValueKey('event-start-time'),
                         onPressed: _busy ? null : () => _chooseTime(true),
                         child: Text('Beginn: ${_start.format(context)}'),
                       ),
                       OutlinedButton(
+                        key: const ValueKey('event-end-time'),
                         onPressed: _busy ? null : () => _chooseTime(false),
                         child: Text('Ende: ${_end.format(context)}'),
                       ),
@@ -397,15 +460,25 @@ class _EventEditorState extends State<EventEditor> {
                         child: Text(recurrence.label),
                       ),
                   ],
-                  onChanged: _busy
+                  onChanged: _busy || _isMultiDay
                       ? null
                       : (value) => setState(() {
                           _recurrence = value ?? EventRecurrence.none;
+                          if (_recurrence != EventRecurrence.none) {
+                            _endDay = _day;
+                          }
                           if (_recurrence == EventRecurrence.none) {
                             _recurrenceEnd = null;
                           }
                         }),
                 ),
+                if (_isMultiDay)
+                  const Padding(
+                    padding: EdgeInsets.only(top: 6),
+                    child: Text(
+                      'Mehrtagestermine können derzeit nicht wiederholt werden.',
+                    ),
+                  ),
                 if (_recurrence != EventRecurrence.none) ...[
                   const SizedBox(height: 12),
                   OutlinedButton.icon(

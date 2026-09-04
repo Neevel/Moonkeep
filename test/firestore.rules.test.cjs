@@ -456,6 +456,28 @@ test('event member assignments are optional and bounded', async () => {
   ));
 });
 
+test('multi-day event dates are valid, complete, and incompatible with recurrence', async () => {
+  const client = db('alice');
+  const ref = suffix => doc(client, `families/alpha/events/${suffix}`);
+  await assertSucceeds(setDoc(ref('trip'), {
+    ...event(), endYear: 2026, endMonth: 9, endDay: 2, endMinute: 120,
+  }));
+  await assertFails(setDoc(ref('partial'), {...event(), endYear: 2026}));
+  await assertFails(setDoc(ref('same-day'), {
+    ...event(), endYear: 2026, endMonth: 8, endDay: 29,
+  }));
+  await assertFails(setDoc(ref('before'), {
+    ...event(), endYear: 2026, endMonth: 8, endDay: 28,
+  }));
+  await assertFails(setDoc(ref('impossible'), {
+    ...event(), endYear: 2026, endMonth: 9, endDay: 31,
+  }));
+  await assertFails(setDoc(ref('recurring'), {
+    ...event(), endYear: 2026, endMonth: 9, endDay: 2,
+    recurrence: {frequency: 'daily'},
+  }));
+});
+
 test('creation and deletion activity is atomic, private, and authentic', async () => {
   await invite();
   await join('bob');

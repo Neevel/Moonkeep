@@ -170,7 +170,8 @@ service cloud.firestore {
         }
         function validEvent(d) {
           return d.keys().hasOnly(['title', 'notes', 'year', 'month', 'day',
-            'startMinute', 'endMinute', 'importance', 'reminderMinutesBefore',
+            'endYear', 'endMonth', 'endDay', 'startMinute', 'endMinute',
+            'importance', 'reminderMinutesBefore',
             'allDay', 'recurrence', 'assignedMemberIds', 'revision',
             'updatedBy', 'updatedAt'])
             && d.title is string && d.title.size() >= 1 && d.title.size() <= 120
@@ -178,8 +179,9 @@ service cloud.firestore {
             && d.year is int && d.year >= 1900 && d.year <= 2100
             && d.month is int && d.month >= 1 && d.month <= 12
             && d.day is int && d.day >= 1 && d.day <= daysInMonth(d.year, d.month)
-            && d.startMinute is int && d.startMinute >= 0
-            && d.endMinute is int && d.endMinute > d.startMinute && d.endMinute < 1440
+            && d.startMinute is int && d.startMinute >= 0 && d.startMinute < 1440
+            && d.endMinute is int && d.endMinute >= 0 && d.endMinute < 1440
+            && validEventEnd(d)
             && (!d.keys().hasAny(['importance'])
               || d.importance in ['low', 'normal', 'high'])
             && (!d.keys().hasAny(['reminderMinutesBefore'])
@@ -193,6 +195,18 @@ service cloud.firestore {
             && d.revision is int && d.updatedBy == request.auth.uid
             && d.updatedAt == request.time;
         }
+        function validEventEnd(d) {
+          let hasEndDate = d.keys().hasAny(['endYear', 'endMonth', 'endDay']);
+          return (!hasEndDate && d.endMinute > d.startMinute)
+            || (hasEndDate
+              && d.keys().hasAll(['endYear', 'endMonth', 'endDay'])
+              && d.endYear is int && d.endYear >= 1900 && d.endYear <= 2100
+              && d.endMonth is int && d.endMonth >= 1 && d.endMonth <= 12
+              && d.endDay is int && d.endDay >= 1
+              && d.endDay <= daysInMonth(d.endYear, d.endMonth)
+              && d.endYear * 10000 + d.endMonth * 100 + d.endDay
+                > d.year * 10000 + d.month * 100 + d.day);
+        }
         function validAssignments(d) {
           let assignments = d.get('assignedMemberIds', []);
           return assignments is list && assignments.size() <= 50;
@@ -201,6 +215,7 @@ service cloud.firestore {
           let r = d.get('recurrence', null);
           return r == null
             || (r is map
+              && !d.keys().hasAny(['endYear', 'endMonth', 'endDay'])
               && r.keys().hasOnly([
                 'frequency', 'endYear', 'endMonth', 'endDay'])
               && r.frequency in [

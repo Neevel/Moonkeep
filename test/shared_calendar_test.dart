@@ -44,6 +44,24 @@ void main() {
     expect(sharedEvent('birthday', {...data, 'revision': 1}).isAllDay, isTrue);
   });
 
+  test('shared multi-day event round-trips with an inclusive end date', () {
+    final original = CalendarEvent(
+      id: 'trip',
+      title: 'Reise',
+      start: DateTime.utc(2026, 9, 4, 18),
+      end: DateTime.utc(2026, 9, 6, 12),
+      reminderMinutesBefore: 30,
+    );
+    final data = sharedEventData(original);
+    expect(data['endYear'], 2026);
+    expect(data['endMonth'], 9);
+    expect(data['endDay'], 6);
+    final restored = sharedEvent('trip', {...data, 'revision': 1});
+    expect(restored.end, DateTime.utc(2026, 9, 6, 12));
+    expect(restored.occursOn(DateTime.utc(2026, 9, 5)), isTrue);
+    expect(restored.reminderMinutesBefore, 30);
+  });
+
   test('shared event parser rejects impossible dates and intervals', () {
     final valid = {
       'title': 'Test',
@@ -61,6 +79,29 @@ void main() {
     );
     expect(
       () => sharedEvent('one', {...valid, 'endMinute': 540}),
+      throwsFormatException,
+    );
+    expect(
+      () => sharedEvent('one', {...valid, 'endYear': 2026}),
+      throwsFormatException,
+    );
+    expect(
+      () => sharedEvent('one', {
+        ...valid,
+        'endYear': 2026,
+        'endMonth': 8,
+        'endDay': 28,
+      }),
+      throwsFormatException,
+    );
+    expect(
+      () => sharedEvent('one', {
+        ...valid,
+        'endYear': 2026,
+        'endMonth': 8,
+        'endDay': 30,
+        'recurrence': {'frequency': 'daily'},
+      }),
       throwsFormatException,
     );
     expect(

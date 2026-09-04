@@ -39,10 +39,8 @@ class CalendarEvent {
     if (id.isEmpty || this.title.isEmpty) {
       throw ArgumentError('ID und Titel dürfen nicht leer sein.');
     }
-    if (!end.isAfter(start) || !isSameDay(start, end)) {
-      throw ArgumentError(
-        'Das Ende muss am selben Tag nach dem Beginn liegen.',
-      );
+    if (!end.isAfter(start)) {
+      throw ArgumentError('Das Ende muss nach dem Beginn liegen.');
     }
     if (isAllDay && reminderMinutesBefore != null) {
       throw ArgumentError(
@@ -57,6 +55,11 @@ class CalendarEvent {
     if (recurrenceEnd != null && _compareCivilDays(recurrenceEnd!, start) < 0) {
       throw ArgumentError(
         'Das Wiederholungsende darf nicht vor dem Terminbeginn liegen.',
+      );
+    }
+    if (recurrence != EventRecurrence.none && isMultiDay) {
+      throw ArgumentError(
+        'Mehrtagestermine können derzeit nicht wiederholt werden.',
       );
     }
     if (this.assignedMemberIds.any((id) => id.trim().isEmpty)) {
@@ -83,6 +86,7 @@ class CalendarEvent {
   final Set<String> assignedMemberIds;
 
   bool get appliesToAllMembers => assignedMemberIds.isEmpty;
+  bool get isMultiDay => !isSameDay(start, end);
 
   bool occursOn(DateTime day) {
     final distance = _civilDay(day).difference(_civilDay(start)).inDays;
@@ -91,7 +95,8 @@ class CalendarEvent {
       return false;
     }
     return switch (recurrence) {
-      EventRecurrence.none => distance == 0,
+      EventRecurrence.none =>
+        distance <= _civilDay(end).difference(_civilDay(start)).inDays,
       EventRecurrence.daily => true,
       EventRecurrence.weekly => distance % 7 == 0,
       EventRecurrence.biweekly => distance % 14 == 0,
