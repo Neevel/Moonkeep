@@ -332,6 +332,67 @@ void main() {
     expect(find.text('member'), findsOneWidget);
   });
 
+  testWidgets('calendar settings hub links existing management screens', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(600, 1200);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final auth = FakeAuth(
+      const AccountIdentity(email: 'owner@example.test', emailVerified: true),
+    );
+    final family = FakeFamily()
+      ..family = const Family(id: 'family', name: 'Jeske', ownerId: 'owner');
+    addTearDown(auth.changes.close);
+    await tester.pumpWidget(MoonkeepApp(auth: auth, family: family));
+    await tester.pumpAndSettle();
+
+    expect(find.byTooltip('Einstellungen'), findsOneWidget);
+    expect(find.byType(BackButton), findsNothing);
+    await tester.tap(find.byTooltip('Einstellungen'));
+    await tester.pumpAndSettle();
+    expect(find.text('Einstellungen'), findsOneWidget);
+    expect(find.text('Aktueller Kalender'), findsOneWidget);
+    expect(find.text('Jeske'), findsOneWidget);
+    expect(find.text('Design'), findsOneWidget);
+    expect(find.text('Demnächst'), findsOneWidget);
+    expect(
+      find.text('Erinnerungen werden direkt beim Termin eingestellt.'),
+      findsOneWidget,
+    );
+
+    await tester.tap(find.text('Mitglieder'));
+    await tester.pumpAndSettle();
+    expect(find.text('Mitglieder (2)'), findsOneWidget);
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Einladungen'));
+    await tester.pumpAndSettle();
+    expect(find.text('Einladung'), findsOneWidget);
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Kalenderverwaltung'));
+    await tester.pumpAndSettle();
+    expect(find.text('Kalender auflösen'), findsOneWidget);
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Profil und Konto'));
+    await tester.pumpAndSettle();
+    expect(find.text('Mein Konto'), findsOneWidget);
+    expect(find.text('Konto löschen'), findsWidgets);
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
+
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
+    expect(find.byTooltip('Einstellungen'), findsOneWidget);
+    expect(find.text('Einstellungen'), findsNothing);
+  });
+
   testWidgets('joins family and opens separate shared calendar', (
     tester,
   ) async {

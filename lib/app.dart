@@ -8,6 +8,7 @@ import 'features/account/auth_repository.dart';
 import 'features/account/account_screen.dart';
 import 'features/family/family_repository.dart';
 import 'features/family/family_screen.dart';
+import 'features/settings/settings_screen.dart';
 
 class MoonkeepApp extends StatelessWidget {
   const MoonkeepApp({
@@ -62,8 +63,13 @@ class MoonkeepApp extends StatelessWidget {
         cleanupForAccountDeletion: family?.cleanupForAccountDeletion,
         setupError: accountSetupError,
       ),
-      '/family': (context) =>
-          FamilyScreen(auth: auth, repository: family, reminders: reminders),
+      '/family': (context) => FamilyScreen(
+        auth: auth,
+        repository: family,
+        reminders: reminders,
+        initialSection:
+            ModalRoute.of(context)?.settings.arguments as FamilySection?,
+      ),
     },
   );
 }

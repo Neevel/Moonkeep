@@ -9,6 +9,7 @@ import 'member_color_resolver.dart';
 import 'month_calendar_view.dart';
 import 'reminder_service.dart';
 import 'week_calendar_view.dart';
+import '../settings/settings_screen.dart';
 
 enum _CalendarViewMode { month, week }
 
@@ -283,6 +284,19 @@ class _CalendarScreenState extends State<CalendarScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
+        leading: IconButton(
+          tooltip: 'Einstellungen',
+          onPressed: _busy
+              ? null
+              : () => Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => SettingsScreen(
+                      calendarName: widget.store?.label ?? 'Moonkeep',
+                    ),
+                  ),
+                ),
+          icon: const Icon(Icons.settings_outlined),
+        ),
         title: Row(
           children: [
             const Icon(Icons.nightlight_round),

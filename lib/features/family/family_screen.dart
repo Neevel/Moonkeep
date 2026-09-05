@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import '../account/auth_repository.dart';
 import '../calendar/calendar_screen.dart';
 import '../calendar/reminder_service.dart';
+import '../settings/settings_screen.dart';
 import 'family_repository.dart';
 import 'firestore_family_repository.dart';
 
@@ -14,11 +15,13 @@ class FamilyScreen extends StatefulWidget {
     required this.repository,
     this.reminders,
     this.autoOpenCalendar = false,
+    this.initialSection,
   });
   final AuthRepository? auth;
   final FamilyRepository? repository;
   final ReminderService? reminders;
   final bool autoOpenCalendar;
+  final FamilySection? initialSection;
 
   @override
   State<FamilyScreen> createState() => _FamilyScreenState();
@@ -27,6 +30,9 @@ class FamilyScreen extends StatefulWidget {
 class _FamilyScreenState extends State<FamilyScreen> {
   final _name = TextEditingController();
   final _code = TextEditingController();
+  final _membersKey = GlobalKey();
+  final _invitationsKey = GlobalKey();
+  final _managementKey = GlobalKey();
   static const _templates = ['Familie', 'Partnerschaft', 'Freunde', 'WG'];
   String _selectedTemplate = _templates.first;
   Family? _family;
@@ -34,6 +40,7 @@ class _FamilyScreenState extends State<FamilyScreen> {
   List<FamilyInvitation> _invitations = [];
   bool _started = false, _busy = false;
   bool _calendarOpened = false;
+  bool _initialSectionRevealed = false;
   String? _message;
   bool _isError = false;
 
@@ -67,8 +74,30 @@ class _FamilyScreenState extends State<FamilyScreen> {
           _members = members;
           _invitations = invitations;
         });
+        _revealInitialSection();
         if (family != null) _scheduleCalendarOpen();
       }
+    });
+  }
+
+  void _revealInitialSection() {
+    if (_initialSectionRevealed || widget.initialSection == null) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || _initialSectionRevealed) return;
+      final key = switch (widget.initialSection!) {
+        FamilySection.members => _membersKey,
+        FamilySection.invitations => _invitationsKey,
+        FamilySection.management => _managementKey,
+      };
+      final target = key.currentContext ?? _managementKey.currentContext;
+      if (target == null) return;
+      _initialSectionRevealed = true;
+      Scrollable.ensureVisible(
+        target,
+        duration: const Duration(milliseconds: 250),
+        curve: Curves.easeOut,
+        alignment: 0.08,
+      );
     });
   }
 
@@ -455,6 +484,7 @@ class _FamilyScreenState extends State<FamilyScreen> {
     ),
     const SizedBox(height: 28),
     Row(
+      key: _membersKey,
       children: [
         Expanded(
           child: Text(
@@ -480,7 +510,11 @@ class _FamilyScreenState extends State<FamilyScreen> {
       ),
     if (widget.repository!.canInvite(_family!)) ...[
       const SizedBox(height: 28),
-      Text('Einladung', style: Theme.of(context).textTheme.titleLarge),
+      Text(
+        'Einladung',
+        key: _invitationsKey,
+        style: Theme.of(context).textTheme.titleLarge,
+      ),
       const SizedBox(height: 8),
       const Text(
         'Der Code ist einmal verwendbar und höchstens sechs Tage gültig. Teile ihn nur direkt mit der gewünschten Person.',
@@ -533,30 +567,56 @@ class _FamilyScreenState extends State<FamilyScreen> {
             ),
           ),
         ),
-    ],
-    const SizedBox(height: 28),
-    if (widget.repository!.canInvite(_family!)) ...[
+    ] else if (widget.initialSection == FamilySection.invitations) ...[
+      const SizedBox(height: 28),
+      Text(
+        'Einladungen',
+        key: _invitationsKey,
+        style: Theme.of(context).textTheme.titleLarge,
+      ),
+      const SizedBox(height: 8),
       const Card(
         child: ListTile(
-          leading: Icon(Icons.shield_outlined),
-          title: Text('Du besitzt diesen Kalender'),
+          leading: Icon(Icons.info_outline),
+          title: Text('Nur für Besitzer'),
           subtitle: Text(
-            'Über das Symbol neben einem Mitglied kannst du den Besitz '
-            'übertragen.',
+            'Einladungscodes können nur von der Person erstellt werden, die den Kalender besitzt.',
           ),
         ),
       ),
-      const SizedBox(height: 16),
-      OutlinedButton.icon(
-        style: OutlinedButton.styleFrom(
-          foregroundColor: Theme.of(context).colorScheme.error,
+    ],
+    const SizedBox(height: 28),
+    if (widget.repository!.canInvite(_family!))
+      KeyedSubtree(
+        key: _managementKey,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const Card(
+              child: ListTile(
+                leading: Icon(Icons.shield_outlined),
+                title: Text('Du besitzt diesen Kalender'),
+                subtitle: Text(
+                  'Über das Symbol neben einem Mitglied kannst du den Besitz '
+                  'übertragen.',
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            OutlinedButton.icon(
+              style: OutlinedButton.styleFrom(
+                foregroundColor: Theme.of(context).colorScheme.error,
+              ),
+              onPressed: _busy ? null : _dissolveFamily,
+              icon: const Icon(Icons.delete_forever_outlined),
+              label: const Text('Kalender auflösen'),
+            ),
+          ],
         ),
-        onPressed: _busy ? null : _dissolveFamily,
-        icon: const Icon(Icons.delete_forever_outlined),
-        label: const Text('Kalender auflösen'),
-      ),
-    ] else
+      )
+    else
       OutlinedButton.icon(
+        key: _managementKey,
         onPressed: _busy ? null : _leave,
         icon: const Icon(Icons.logout),
         label: const Text('Kalender verlassen'),
