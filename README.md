@@ -10,21 +10,17 @@ Mitglieder einladen, Monatsansicht und synchronisierte Termine.
 
 ## Entwicklungsstand
 
-Ein lokaler Flutter-Prototyp mit Monatsansicht, Tagesagenda und Terminverwaltung
-ist umgesetzt. Termine werden als JSON mit `SharedPreferencesAsync` gespeichert.
-Unter **Mein Konto** ist die Firebase-Anmeldung vorbereitet (E-Mail/Passwort,
-Registrierung, Bestätigungsmail und Passwort-Reset). Ohne Firebase-Konfiguration
-zeigt die App einen Einrichtungshinweis. Der Android-Testbuild ist für das
-Firebase-Projekt des Nutzers konfiguriert; echte Kontoabläufe sind noch zu prüfen.
-Version 0.4 enthält zusätzlich Familie erstellen/beitreten, eine Rollen- und
-Mitgliederansicht, einmalige Einladungscodes und einen getrennten gemeinsamen
-Firestore-Kalender mit Konflikterkennung. Wichtigkeitsstufen, farbige
-Terminpunkte, lokale Android-Erinnerungen und Live-Hinweise bei
-Erstellen/Löschen sind integriert. Die Zugriffsregeln sind lokal im Emulator getestet; die
-Live-Datenbank in Berlin und Regel-Deployment sind eingerichtet. Der erste
-Zwei-Konten-/Zwei-Geräte-Test bestätigte die direkte Synchronisierung eines neu
-angelegten Termins, sofortiges Löschen sowie den Erhalt der Anmeldung nach einem
-vollständigen App-Neustart. Bis die restlichen Fehlerfälle geprüft sind, nur Testdaten verwenden.
+Moonkeep ist als gemeinsamer Firestore-Kalender für kleine private Gruppen
+umgesetzt. Anmeldung, E-Mail-Bestätigung, Kalenderanlage, einmalige
+Einladungscodes, Mitgliederrollen, Besitzwechsel und fachliche Auflösung sind
+integriert. Termine synchronisieren live und unterstützen Ganztägigkeit,
+Wiederholungen, Mehrtagesspannen, Wichtigkeit, Mitgliederzuordnung und lokale
+Android-Erinnerungen. Monats-, kompakte Wochen- und Tagesansicht verwenden
+Anzeigenamen, stabile Mitgliederfarben und Mitgliederfilter.
+
+Die zentralen Abläufe wurden mit zwei Konten auf zwei Android-Geräten bestätigt;
+Flutter-, Analyse- und Firestore-Rules-Tests sind grün. Der genaue Beta-Stand und
+die verbleibenden Grenzen stehen im [Projektstand](PROJECT_STATUS.md).
 
 Details: [MVP](docs/MVP.md) und [Projektstand](PROJECT_STATUS.md).
 
@@ -58,13 +54,12 @@ Für eine Vorschau ohne Chrome-Installation:
 .\.tools\flutter\bin\flutter.bat run -d web-server --web-hostname 127.0.0.1 --web-port 8080
 ```
 
-Die angezeigte lokale Adresse im Browser öffnen. Daten gehören zum jeweiligen
-Browserprofil und Ursprung (Host und Port); eine andere Adresse zeigt einen
-separaten Kalender. Das Löschen der Browserdaten entfernt auch die Termine.
+Die angezeigte lokale Adresse im Browser öffnen. Für den gemeinsamen Kalender
+ist auch die Web-Vorschau auf eine passende Firebase-Konfiguration angewiesen.
 
-Shared Preferences ist ein einfacher Prototyp-Speicher ohne garantierte
-Ausfallsicherheit oder Backup; bitte vorerst ausschließlich Testdaten verwenden.
-Siehe [Paketdokumentation](https://pub.dev/packages/shared_preferences).
+Der frühere lokale Kalender ist nicht mehr Teil der Nutzerführung. Gemeinsame
+Daten verwenden ausschließlich bestätigten Firestore-Serverstand und keinen
+lokalen Firestore-Cache.
 
 Android benötigt zusätzlich das Android-SDK; iOS-Builds benötigen macOS und Xcode.
 Firebase-Konfigurationsdateien und Signierschlüssel werden nicht eingecheckt.
@@ -104,11 +99,11 @@ installiert; SDK-Dateien oder Lizenzprüfungen wurden nicht manipuliert.
 2. Erreicht: echte Registrierung und Anmeldung im konfigurierten Android-Build.
 3. Erreicht: Familien, einmalige Einladungen, synchronisierte Termine,
    Live-Datenbank und Zwei-Nutzer-Test.
-4. Implementiert: Mitgliederrollen, Wichtigkeitsstufen, Monatsmarkierungen,
-   Android-Erinnerungen und sichere Terminaktivität mit 15 Regeltests.
-5. Kontolöschung, Push bei geschlossener App, weitere Gerätetests, App Check und
-   Veröffentlichungsvorbereitung.
+4. Implementiert: Kalender UI V2, Mitgliederfarben/-filter/-anzeigenamen,
+   Serien, Ganztägig-/Mehrtagestermine und Reminder V2; 29 Rules-Tests sichern
+   die Firestore-Zugriffe ab.
+5. Als Nächstes: Kontolöschung/Owner-Lifecycle, Release-Signierung und
+   Versionierung, wiederkehrende Reminder, App Check und iOS-Vorbereitung.
 
 Einrichtung und Grenzen der Kontofunktion: [Firebase-Anleitung](docs/FIREBASE_SETUP.md).
 Familienmodell und Sicherheitsgrenzen: [Firestore-Anleitung](docs/FIRESTORE_SETUP.md).
-Eine Anmeldung schützt oder synchronisiert den weiterhin getrennten lokalen Kalender nicht.
