@@ -52,6 +52,14 @@ void main() {
         authErrorMessage('unknown-internal-details'),
         'Die Anfrage ist fehlgeschlagen. Bitte versuche es erneut.',
       );
+      expect(
+        reauthenticationErrorMessage('wrong-password'),
+        'Das Passwort ist nicht korrekt.',
+      );
+      expect(
+        reauthenticationErrorMessage('network-request-failed'),
+        'Keine Verbindung. Bitte prüfe deine Internetverbindung.',
+      );
     },
   );
 }

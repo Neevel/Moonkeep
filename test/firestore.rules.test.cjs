@@ -45,6 +45,7 @@ async function dissolve(client, uid = 'alice', fid = 'alpha') {
   const batch = writeBatch(client);
   batch.update(doc(client, 'families', fid), { status: 'dissolved' });
   batch.delete(doc(client, 'memberships', uid));
+  batch.delete(doc(client, 'families', fid, 'members', uid));
   return batch.commit();
 }
 const event = (uid = 'alice') => ({ title: 'Ausflug', notes: '', year: 2026, month: 8, day: 29,
@@ -253,12 +254,30 @@ test('only owner can atomically dissolve an active family', async () => {
     status: 'dissolved',
   }));
   await assertFails(dissolve(db('bob'), 'bob'));
+
+  const alice = db('alice');
+  const incomplete = writeBatch(alice);
+  incomplete.update(doc(alice, 'families/alpha'), { status: 'dissolved' });
+  incomplete.delete(doc(alice, 'memberships/alice'));
+  await assertFails(incomplete.commit());
+
+  const foreignDelete = writeBatch(alice);
+  foreignDelete.update(doc(alice, 'families/alpha'), { status: 'dissolved' });
+  foreignDelete.delete(doc(alice, 'memberships/alice'));
+  foreignDelete.delete(doc(alice, 'families/alpha/members/alice'));
+  foreignDelete.delete(doc(alice, 'families/alpha/members/bob'));
+  await assertFails(foreignDelete.commit());
+
   await assertSucceeds(dissolve(db('alice')));
 
   await env.withSecurityRulesDisabled(async context => {
     const snapshot = await getDoc(doc(context.firestore(), 'families/alpha'));
     assert.equal(snapshot.data().status, 'dissolved');
     assert.equal((await getDoc(doc(context.firestore(), 'memberships/alice'))).exists(), false);
+    assert.equal((await getDoc(doc(context.firestore(),
+      'families/alpha/members/alice'))).exists(), false);
+    assert.equal((await getDoc(doc(context.firestore(),
+      'families/alpha/members/bob'))).exists(), true);
   });
 });
 

@@ -440,24 +440,85 @@ class FirestoreFamilyRepository implements FamilyRepository {
     }
     final familyRef = db.doc('families/${family.id}');
     final membershipRef = db.doc('memberships/$uid');
+    final profileRef = familyRef.collection('members').doc(uid);
     await db.runTransaction((tx) async {
       _checkSession(uid);
       final currentFamily = await tx.get(familyRef);
       final membership = await tx.get(membershipRef);
+      final profile = await tx.get(profileRef);
       final data = currentFamily.data();
       if (data == null ||
           data['ownerId'] != uid ||
           data['status'] == 'dissolved' ||
           !membership.exists ||
-          membership.data()?['familyId'] != family.id) {
+          membership.data()?['familyId'] != family.id ||
+          !profile.exists ||
+          profile.data()?['role'] != 'owner') {
         throw const FamilyFailure(
           'Der Kalender wurde bereits aufgelöst oder der Besitz wurde geändert.',
         );
       }
       tx.update(familyRef, {'status': 'dissolved'});
       tx.delete(membershipRef);
+      tx.delete(profileRef);
     });
     _checkSession(uid);
+  }
+
+  Future<({AccountDeletionPlan plan, Family? family})>
+  _currentAccountDeletionState() async {
+    final user = auth.currentUser;
+    if (user == null) {
+      throw const FamilyFailure('Bitte melde dich erneut an.');
+    }
+    // Unverified accounts cannot create or join a calendar under the rules.
+    // Their own membership document is intentionally not readable either.
+    if (!user.emailVerified) {
+      return (plan: AccountDeletionPlan.noMembership, family: null);
+    }
+    final family = await loadFamily();
+    if (family == null) {
+      return (plan: AccountDeletionPlan.noMembership, family: null);
+    }
+    if (family.ownerId != user.uid) {
+      return (
+        plan: deletionPlanFor(uid: user.uid, family: family),
+        family: family,
+      );
+    }
+    final currentMembers = await members(family);
+    return (
+      plan: deletionPlanFor(
+        uid: user.uid,
+        family: family,
+        members: currentMembers,
+      ),
+      family: family,
+    );
+  }
+
+  @override
+  Future<AccountDeletionPlan> accountDeletionPlan() async =>
+      (await _currentAccountDeletionState()).plan;
+
+  @override
+  Future<void> cleanupForAccountDeletion() async {
+    // Deliberately reload the server-backed state immediately before cleanup.
+    final state = await _currentAccountDeletionState();
+    switch (state.plan) {
+      case AccountDeletionPlan.noMembership:
+        return;
+      case AccountDeletionPlan.member:
+        await leaveFamily(state.family!);
+        return;
+      case AccountDeletionPlan.soleOwner:
+        await dissolveFamily(state.family!);
+        return;
+      case AccountDeletionPlan.transferOwnershipRequired:
+        throw const FamilyFailure(
+          'Übertrage zuerst den Besitz an ein anderes Mitglied. Danach kannst du dein Konto löschen.',
+        );
+    }
   }
 
   @override

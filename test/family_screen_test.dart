@@ -35,6 +35,10 @@ class FakeAuth implements AuthRepository {
   @override
   Future<void> reloadUser() async {}
   @override
+  Future<void> reauthenticate(String password) async {}
+  @override
+  Future<void> deleteAccount() async {}
+  @override
   Future<void> signOut() async {}
 }
 
@@ -141,6 +145,13 @@ class FakeFamily implements FamilyRepository {
   }
 
   @override
+  Future<AccountDeletionPlan> accountDeletionPlan() async =>
+      AccountDeletionPlan.noMembership;
+
+  @override
+  Future<void> cleanupForAccountDeletion() async {}
+
+  @override
   CalendarRepository calendar(Family family) => FakeSharedCalendar();
 }
 
@@ -153,6 +164,39 @@ class FakeSharedCalendar extends CalendarStore {
 }
 
 void main() {
+  test(
+    'account deletion plan distinguishes membership and owner lifecycle',
+    () {
+      const active = Family(id: 'family', name: 'Jeske', ownerId: 'owner');
+      const owner = FamilyMember(
+        id: 'owner',
+        email: 'owner@example.test',
+        isOwner: true,
+      );
+      const member = FamilyMember(
+        id: 'member',
+        email: 'member@example.test',
+        isOwner: false,
+      );
+      expect(
+        deletionPlanFor(uid: 'owner', family: null),
+        AccountDeletionPlan.noMembership,
+      );
+      expect(
+        deletionPlanFor(uid: 'member', family: active),
+        AccountDeletionPlan.member,
+      );
+      expect(
+        deletionPlanFor(uid: 'owner', family: active, members: [owner]),
+        AccountDeletionPlan.soleOwner,
+      );
+      expect(
+        deletionPlanFor(uid: 'owner', family: active, members: [owner, member]),
+        AccountDeletionPlan.transferOwnershipRequired,
+      );
+    },
+  );
+
   test('family member prefers display name and keeps legacy fallbacks', () {
     const named = FamilyMember(
       id: 'named',

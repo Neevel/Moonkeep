@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:moonkeep/app.dart';
 import 'package:moonkeep/features/account/auth_repository.dart';
 import 'package:moonkeep/features/account/account_screen.dart';
+import 'package:moonkeep/features/family/family_repository.dart';
 
 class FakeAuthRepository implements AuthRepository {
   final _changes = StreamController<AccountIdentity?>.broadcast();
@@ -15,7 +16,13 @@ class FakeAuthRepository implements AuthRepository {
   int registerCalls = 0;
   int resetCalls = 0;
   int verificationCalls = 0;
+  int reauthenticateCalls = 0;
+  int deleteCalls = 0;
+  String? lastPassword;
   AuthFailure? failure;
+  AuthFailure? reauthenticateFailure;
+  AuthFailure? deleteFailure;
+  final operationLog = <String>[];
   Completer<void>? pendingSignIn;
   bool emitChanges = true;
 
@@ -88,6 +95,25 @@ class FakeAuthRepository implements AuthRepository {
   }
 
   @override
+  Future<void> reauthenticate(String password) async {
+    reauthenticateCalls++;
+    lastPassword = password;
+    operationLog.add('reauthenticate');
+    if (reauthenticateFailure != null) throw reauthenticateFailure!;
+    if (failure != null) throw failure!;
+  }
+
+  @override
+  Future<void> deleteAccount() async {
+    deleteCalls++;
+    operationLog.add('delete-auth');
+    if (deleteFailure != null) throw deleteFailure!;
+    if (failure != null) throw failure!;
+    user = null;
+    if (emitChanges) publishUser();
+  }
+
+  @override
   Future<void> signOut() async {
     if (failure != null) throw failure!;
     user = null;
@@ -98,6 +124,51 @@ class FakeAuthRepository implements AuthRepository {
 }
 
 void main() {
+  Future<void> pumpSignedAccount(
+    WidgetTester tester,
+    FakeAuthRepository auth, {
+    required Future<AccountDeletionPlan> Function() plan,
+    required Future<void> Function() cleanup,
+  }) async {
+    tester.view.physicalSize = const Size(500, 1200);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    addTearDown(auth.dispose);
+    await tester.pumpWidget(
+      MaterialApp(
+        routes: {
+          '/family': (_) => const Scaffold(body: Text('Kalenderauswahl')),
+        },
+        home: AccountScreen(
+          auth: auth,
+          accountDeletionPlan: plan,
+          cleanupForAccountDeletion: cleanup,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(
+      find.widgetWithText(OutlinedButton, 'Konto löschen'),
+    );
+  }
+
+  Future<void> confirmAccountDeletion(
+    WidgetTester tester, {
+    String password = 'password-test',
+  }) async {
+    await tester.tap(find.widgetWithText(OutlinedButton, 'Konto löschen'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(FilledButton, 'Konto löschen'));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const ValueKey('delete-account-password')),
+      password,
+    );
+    await tester.tap(find.widgetWithText(FilledButton, 'Endgültig löschen'));
+    await tester.pumpAndSettle();
+  }
+
   Future<void> openAccount(
     WidgetTester tester, {
     FakeAuthRepository? auth,
@@ -380,4 +451,216 @@ void main() {
       expect(find.text('Du bist jetzt abgemeldet.'), findsOneWidget);
     },
   );
+
+  testWidgets(
+    'member cleanup runs after reauthentication and before auth delete',
+    (tester) async {
+      final auth = FakeAuthRepository()
+        ..user = const AccountIdentity(
+          email: 'member@example.test',
+          emailVerified: true,
+        );
+      await pumpSignedAccount(
+        tester,
+        auth,
+        plan: () async => AccountDeletionPlan.member,
+        cleanup: () async => auth.operationLog.add('cleanup-member'),
+      );
+
+      await tester.tap(find.widgetWithText(OutlinedButton, 'Konto löschen'));
+      await tester.pumpAndSettle();
+      expect(
+        find.textContaining('verlässt den gemeinsamen Kalender'),
+        findsOneWidget,
+      );
+      await tester.tap(find.widgetWithText(FilledButton, 'Konto löschen'));
+      await tester.pumpAndSettle();
+      expect(
+        tester
+            .widget<EditableText>(
+              find.descendant(
+                of: find.byKey(const ValueKey('delete-account-password')),
+                matching: find.byType(EditableText),
+              ),
+            )
+            .obscureText,
+        isTrue,
+      );
+      await tester.enterText(
+        find.byKey(const ValueKey('delete-account-password')),
+        'password-test',
+      );
+      await tester.tap(find.widgetWithText(FilledButton, 'Endgültig löschen'));
+      await tester.pumpAndSettle();
+
+      expect(auth.lastPassword, 'password-test');
+      expect(auth.operationLog, [
+        'reauthenticate',
+        'cleanup-member',
+        'delete-auth',
+      ]);
+      expect(find.widgetWithText(FilledButton, 'Anmelden'), findsOneWidget);
+    },
+  );
+
+  testWidgets('owner with other members is blocked before reauthentication', (
+    tester,
+  ) async {
+    final auth = FakeAuthRepository()
+      ..user = const AccountIdentity(
+        email: 'owner@example.test',
+        emailVerified: true,
+      );
+    var cleaned = false;
+    await pumpSignedAccount(
+      tester,
+      auth,
+      plan: () async => AccountDeletionPlan.transferOwnershipRequired,
+      cleanup: () async => cleaned = true,
+    );
+    await tester.tap(find.widgetWithText(OutlinedButton, 'Konto löschen'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Besitz zuerst übertragen'), findsOneWidget);
+    expect(find.text('Besitzer übertragen'), findsOneWidget);
+    expect(auth.reauthenticateCalls, 0);
+    expect(cleaned, isFalse);
+  });
+
+  testWidgets('owner can retry as member after ownership transfer', (
+    tester,
+  ) async {
+    final auth = FakeAuthRepository()
+      ..user = const AccountIdentity(
+        email: 'owner@example.test',
+        emailVerified: true,
+      );
+    var plan = AccountDeletionPlan.transferOwnershipRequired;
+    await pumpSignedAccount(
+      tester,
+      auth,
+      plan: () async => plan,
+      cleanup: () async => auth.operationLog.add('cleanup-member'),
+    );
+    await tester.tap(find.widgetWithText(OutlinedButton, 'Konto löschen'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Abbrechen'));
+    await tester.pumpAndSettle();
+    plan = AccountDeletionPlan.member;
+    await confirmAccountDeletion(tester);
+    expect(auth.deleteCalls, 1);
+  });
+
+  testWidgets('sole owner dissolves calendar before deleting auth account', (
+    tester,
+  ) async {
+    final auth = FakeAuthRepository()
+      ..user = const AccountIdentity(
+        email: 'owner@example.test',
+        emailVerified: true,
+      );
+    await pumpSignedAccount(
+      tester,
+      auth,
+      plan: () async => AccountDeletionPlan.soleOwner,
+      cleanup: () async => auth.operationLog.add('dissolve-owner'),
+    );
+    await tester.tap(find.widgetWithText(OutlinedButton, 'Konto löschen'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('Kalender wird aufgelöst'), findsOneWidget);
+    await tester.tap(find.widgetWithText(FilledButton, 'Konto löschen'));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const ValueKey('delete-account-password')),
+      'password-test',
+    );
+    await tester.tap(find.widgetWithText(FilledButton, 'Endgültig löschen'));
+    await tester.pumpAndSettle();
+    expect(auth.operationLog, [
+      'reauthenticate',
+      'dissolve-owner',
+      'delete-auth',
+    ]);
+  });
+
+  testWidgets('account without membership deletes auth account directly', (
+    tester,
+  ) async {
+    final auth = FakeAuthRepository()
+      ..user = const AccountIdentity(
+        email: 'solo@example.test',
+        emailVerified: true,
+      );
+    var cleanupCalls = 0;
+    await pumpSignedAccount(
+      tester,
+      auth,
+      plan: () async => AccountDeletionPlan.noMembership,
+      cleanup: () async => cleanupCalls++,
+    );
+    await confirmAccountDeletion(tester);
+    expect(cleanupCalls, 1);
+    expect(auth.deleteCalls, 1);
+  });
+
+  testWidgets('wrong password keeps account and permits retry', (tester) async {
+    final auth = FakeAuthRepository()
+      ..user = const AccountIdentity(
+        email: 'member@example.test',
+        emailVerified: true,
+      )
+      ..reauthenticateFailure = const AuthFailure(
+        'Das Passwort ist nicht korrekt.',
+      );
+    var cleanupCalls = 0;
+    await pumpSignedAccount(
+      tester,
+      auth,
+      plan: () async => AccountDeletionPlan.member,
+      cleanup: () async => cleanupCalls++,
+    );
+    await confirmAccountDeletion(tester, password: 'wrong');
+    expect(find.text('Das Passwort ist nicht korrekt.'), findsOneWidget);
+    expect(cleanupCalls, 0);
+    expect(auth.deleteCalls, 0);
+    expect(find.text('Angemeldet'), findsOneWidget);
+
+    auth.reauthenticateFailure = null;
+    await confirmAccountDeletion(tester);
+    expect(auth.deleteCalls, 1);
+  });
+
+  testWidgets('auth deletion failure after cleanup is clear and retryable', (
+    tester,
+  ) async {
+    final auth = FakeAuthRepository()
+      ..user = const AccountIdentity(
+        email: 'member@example.test',
+        emailVerified: true,
+      )
+      ..deleteFailure = const AuthFailure('Bitte melde dich erneut an.');
+    var plan = AccountDeletionPlan.member;
+    var cleanupCalls = 0;
+    await pumpSignedAccount(
+      tester,
+      auth,
+      plan: () async => plan,
+      cleanup: () async {
+        cleanupCalls++;
+        plan = AccountDeletionPlan.noMembership;
+      },
+    );
+    await confirmAccountDeletion(tester);
+    expect(cleanupCalls, 1);
+    expect(
+      find.textContaining('Kalenderzuordnung wurde bereits entfernt'),
+      findsOneWidget,
+    );
+    expect(find.text('Angemeldet'), findsOneWidget);
+
+    auth.deleteFailure = null;
+    await confirmAccountDeletion(tester);
+    expect(auth.deleteCalls, 2);
+    expect(cleanupCalls, 2);
+  });
 }

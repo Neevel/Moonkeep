@@ -33,5 +33,7 @@ abstract interface class AuthRepository {
   Future<void> sendPasswordReset(String email);
   Future<void> sendVerificationEmail();
   Future<void> reloadUser();
+  Future<void> reauthenticate(String password);
+  Future<void> deleteAccount();
   Future<void> signOut();
 }

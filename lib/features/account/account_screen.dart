@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../family/family_repository.dart';
 import 'auth_repository.dart';
 
 class AccountScreen extends StatefulWidget {
@@ -7,11 +8,15 @@ class AccountScreen extends StatefulWidget {
     super.key,
     this.auth,
     this.syncDisplayName,
+    this.accountDeletionPlan,
+    this.cleanupForAccountDeletion,
     this.setupError,
   });
 
   final AuthRepository? auth;
   final Future<void> Function(String displayName)? syncDisplayName;
+  final Future<AccountDeletionPlan> Function()? accountDeletionPlan;
+  final Future<void> Function()? cleanupForAccountDeletion;
   final String? setupError;
 
   @override
@@ -120,6 +125,113 @@ class _AccountScreenState extends State<AccountScreen> {
       notify: true,
       failure: 'Anzeigename konnte nicht gespeichert werden.',
     );
+  }
+
+  Future<void> _deleteAccount(AccountIdentity user) async {
+    if (_busy) return;
+    setState(() {
+      _busy = true;
+      _message = null;
+    });
+    AccountDeletionPlan plan;
+    try {
+      plan = user.emailVerified
+          ? await widget.accountDeletionPlan?.call() ??
+                AccountDeletionPlan.noMembership
+          : AccountDeletionPlan.noMembership;
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _message = _accountDeletionError(error);
+        _isError = true;
+        _busy = false;
+      });
+      return;
+    }
+    if (!mounted) return;
+    setState(() => _busy = false);
+
+    if (plan == AccountDeletionPlan.transferOwnershipRequired) {
+      final transfer = await showDialog<bool>(
+        context: context,
+        builder: (_) => AlertDialog(
+          title: const Text('Besitz zuerst übertragen'),
+          content: const Text(
+            'Andere Mitglieder nutzen diesen Kalender noch. Übertrage zuerst den Besitz an ein anderes Mitglied. Danach kannst du dein Konto löschen.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Abbrechen'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('Besitzer übertragen'),
+            ),
+          ],
+        ),
+      );
+      if (transfer == true && mounted) {
+        Navigator.of(context).pushNamed('/family');
+      }
+      return;
+    }
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Konto endgültig löschen?'),
+        content: Text(_deletionConfirmation(plan)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Abbrechen'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(context).colorScheme.error,
+            ),
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Konto löschen'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    final password = await showDialog<String>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const _DeleteAccountPasswordDialog(),
+    );
+    if (password == null || !mounted) return;
+
+    setState(() {
+      _busy = true;
+      _message = null;
+    });
+    var cleanupCompleted = false;
+    try {
+      await widget.auth!.reauthenticate(password);
+      await widget.cleanupForAccountDeletion?.call();
+      cleanupCompleted = true;
+      await widget.auth!.deleteAccount();
+      if (!mounted) return;
+      setState(() {
+        _message = 'Dein Konto wurde gelöscht.';
+        _isError = false;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      final suffix = cleanupCompleted
+          ? ' Deine Kalenderzuordnung wurde bereits entfernt. Du kannst die Kontolöschung erneut versuchen.'
+          : '';
+      setState(() {
+        _message = '${_accountDeletionError(error)}$suffix';
+        _isError = true;
+      });
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
   }
 
   void _resetPassword() {
@@ -421,6 +533,93 @@ class _AccountScreenState extends State<AccountScreen> {
               ? 'Weiter zur Kalenderauswahl'
               : 'Kalender einrichten',
         ),
+      ),
+      const SizedBox(height: 32),
+      const Divider(),
+      const SizedBox(height: 16),
+      Text(
+        'Konto löschen',
+        style: Theme.of(context).textTheme.titleMedium
+            ?.copyWith(color: Theme.of(context).colorScheme.error),
+      ),
+      const SizedBox(height: 8),
+      const Text(
+        'Löscht dein Moonkeep-Konto dauerhaft. Dieser Vorgang kann nicht rückgängig gemacht werden.',
+      ),
+      const SizedBox(height: 12),
+      OutlinedButton(
+        style: OutlinedButton.styleFrom(
+          foregroundColor: Theme.of(context).colorScheme.error,
+        ),
+        onPressed: _busy ? null : () => _deleteAccount(user),
+        child: const Text('Konto löschen'),
+      ),
+    ],
+  );
+}
+
+String _deletionConfirmation(AccountDeletionPlan plan) => switch (plan) {
+  AccountDeletionPlan.member => 'Dein Konto wird dauerhaft gelöscht und du verlässt den gemeinsamen Kalender. Historische Termine bleiben unverändert.',
+  AccountDeletionPlan.soleOwner => 'Dein Konto wird dauerhaft gelöscht und der gemeinsame Kalender wird aufgelöst. Historische Kalenderdaten werden nicht sofort physisch gelöscht.',
+  AccountDeletionPlan.noMembership => 'Dein Moonkeep-Konto wird dauerhaft gelöscht. Dieser Vorgang kann nicht rückgängig gemacht werden.',
+  AccountDeletionPlan.transferOwnershipRequired => '',
+};
+
+String _accountDeletionError(Object error) => switch (error) {
+  AuthFailure(:final message) => message,
+  FamilyFailure(:final message) => message,
+  _ => 'Die Kontolöschung ist fehlgeschlagen. Bitte versuche es erneut.',
+};
+
+class _DeleteAccountPasswordDialog extends StatefulWidget {
+  const _DeleteAccountPasswordDialog();
+
+  @override
+  State<_DeleteAccountPasswordDialog> createState() =>
+      _DeleteAccountPasswordDialogState();
+}
+
+class _DeleteAccountPasswordDialogState
+    extends State<_DeleteAccountPasswordDialog> {
+  final _formKey = GlobalKey<FormState>();
+  final _password = TextEditingController();
+
+  @override
+  void dispose() {
+    _password.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => AlertDialog(
+    title: const Text('Löschung bestätigen'),
+    content: Form(
+      key: _formKey,
+      child: TextFormField(
+        key: const ValueKey('delete-account-password'),
+        controller: _password,
+        autofocus: true,
+        obscureText: true,
+        autocorrect: false,
+        enableSuggestions: false,
+        decoration: const InputDecoration(labelText: 'Aktuelles Passwort'),
+        validator: (value) => value == null || value.isEmpty
+            ? 'Bitte gib dein Passwort ein.'
+            : null,
+      ),
+    ),
+    actions: [
+      TextButton(
+        onPressed: () => Navigator.of(context).pop(),
+        child: const Text('Abbrechen'),
+      ),
+      FilledButton(
+        onPressed: () {
+          if (_formKey.currentState!.validate()) {
+            Navigator.of(context).pop(_password.text);
+          }
+        },
+        child: const Text('Endgültig löschen'),
       ),
     ],
   );

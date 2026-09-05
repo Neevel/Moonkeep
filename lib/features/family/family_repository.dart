@@ -50,6 +50,25 @@ class FamilyFailure implements Exception {
   final String message;
 }
 
+enum AccountDeletionPlan {
+  noMembership,
+  member,
+  soleOwner,
+  transferOwnershipRequired,
+}
+
+AccountDeletionPlan deletionPlanFor({
+  required String uid,
+  required Family? family,
+  Iterable<FamilyMember> members = const [],
+}) {
+  if (family == null) return AccountDeletionPlan.noMembership;
+  if (family.ownerId != uid) return AccountDeletionPlan.member;
+  return members.any((member) => member.id != uid)
+      ? AccountDeletionPlan.transferOwnershipRequired
+      : AccountDeletionPlan.soleOwner;
+}
+
 abstract interface class FamilyRepository {
   bool canInvite(Family family);
   Future<Family?> loadFamily();
@@ -63,5 +82,7 @@ abstract interface class FamilyRepository {
   Future<void> leaveFamily(Family family);
   Future<Family> transferOwnership(Family family, String newOwnerId);
   Future<void> dissolveFamily(Family family);
+  Future<AccountDeletionPlan> accountDeletionPlan();
+  Future<void> cleanupForAccountDeletion();
   CalendarRepository calendar(Family family);
 }

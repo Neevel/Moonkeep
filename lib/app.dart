@@ -58,6 +58,8 @@ class MoonkeepApp extends StatelessWidget {
       '/account': (context) => AccountScreen(
         auth: auth,
         syncDisplayName: family?.updateOwnDisplayName,
+        accountDeletionPlan: family?.accountDeletionPlan,
+        cleanupForAccountDeletion: family?.cleanupForAccountDeletion,
         setupError: accountSetupError,
       ),
       '/family': (context) =>

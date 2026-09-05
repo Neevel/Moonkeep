@@ -79,8 +79,34 @@ class FirebaseAuthRepository implements AuthRepository {
   });
 
   @override
+  Future<void> reauthenticate(String password) async {
+    final user = _requireUser();
+    final email = user.email;
+    if (email == null || email.isEmpty) {
+      throw const AuthFailure(
+        'Für dieses Konto ist keine E-Mail-Adresse verfügbar.',
+      );
+    }
+    try {
+      await user.reauthenticateWithCredential(
+        EmailAuthProvider.credential(email: email, password: password),
+      );
+    } on FirebaseAuthException catch (error) {
+      throw AuthFailure(reauthenticationErrorMessage(error.code));
+    }
+  }
+
+  @override
+  Future<void> deleteAccount() => _guard(() => _requireUser().delete());
+
+  @override
   Future<void> signOut() => _guard(_auth.signOut);
 }
+
+String reauthenticationErrorMessage(String code) => switch (code) {
+  'invalid-credential' || 'wrong-password' => 'Das Passwort ist nicht korrekt.',
+  _ => authErrorMessage(code),
+};
 
 String authErrorMessage(String code) => switch (code) {
   'invalid-email' => 'Bitte gib eine gültige E-Mail-Adresse ein.',

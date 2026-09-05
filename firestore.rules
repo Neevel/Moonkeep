@@ -64,7 +64,8 @@ service cloud.firestore {
             && getAfter(familyPath(resource.data.familyId)).data.status == 'dissolved'
             && getAfter(familyPath(resource.data.familyId)).data
               .diff(get(familyPath(resource.data.familyId)).data)
-              .affectedKeys().hasOnly(['status'])));
+              .affectedKeys().hasOnly(['status'])
+            && !existsAfter(memberPath(resource.data.familyId, uid))));
       allow list, update: if false;
     }
     match /families/{fid} {
@@ -89,7 +90,8 @@ service cloud.firestore {
           && get(profile(request.auth.uid)).data.familyId == fid
           && request.resource.data.status == 'dissolved'
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status'])
-          && !existsAfter(profile(request.auth.uid));
+          && !existsAfter(profile(request.auth.uid))
+          && !existsAfter(memberPath(fid, request.auth.uid));
       }
       function validDisplayName(value) {
         return value is string
@@ -157,8 +159,15 @@ service cloud.firestore {
           && validMemberProfile();
         allow delete: if verified() && memberId == request.auth.uid
           && get(profile(request.auth.uid)).data.familyId == fid
-          && get(familyPath(fid)).data.ownerId != request.auth.uid
-          && !existsAfter(profile(request.auth.uid));
+          && ((get(familyPath(fid)).data.ownerId != request.auth.uid
+              && !existsAfter(profile(request.auth.uid)))
+            || (resource.data.role == 'owner'
+              && get(familyPath(fid)).data.ownerId == request.auth.uid
+              && activeFamily(fid)
+              && getAfter(familyPath(fid)).data.status == 'dissolved'
+              && getAfter(familyPath(fid)).data
+                .diff(get(familyPath(fid)).data).affectedKeys().hasOnly(['status'])
+              && !existsAfter(profile(request.auth.uid))));
         allow update: if validOwnershipRoleTransfer()
           || validOwnDisplayNameUpdate();
       }
