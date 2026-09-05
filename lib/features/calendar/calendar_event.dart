@@ -51,6 +51,12 @@ enum ReminderOffset {
   }
 }
 
+/// Product limit for newly selected individual event audiences.
+const maxExplicitEventAssignees = 8;
+
+/// Older documents remain readable and editable while their audience is unchanged.
+const maxReadableLegacyEventAssignees = 50;
+
 class CalendarEvent {
   CalendarEvent({
     required this.id,
@@ -97,7 +103,7 @@ class CalendarEvent {
     if (this.assignedMemberIds.any((id) => id.trim().isEmpty)) {
       throw ArgumentError('Mitglieds-IDs dürfen nicht leer sein.');
     }
-    if (this.assignedMemberIds.length > 50) {
+    if (this.assignedMemberIds.length > maxReadableLegacyEventAssignees) {
       throw ArgumentError('Zu viele Terminzuordnungen.');
     }
   }

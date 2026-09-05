@@ -256,7 +256,10 @@ class _EventEditorState extends State<EventEditor> {
             contentPadding: EdgeInsets.zero,
             title: Text(member.value),
             value: _assignedMemberIds.contains(member.key),
-            onChanged: _busy
+            onChanged:
+                _busy ||
+                    (!_assignedMemberIds.contains(member.key) &&
+                        _assignedMemberIds.length >= maxExplicitEventAssignees)
                 ? null
                 : (selected) => setState(() {
                     if (selected == true) {
@@ -265,6 +268,14 @@ class _EventEditorState extends State<EventEditor> {
                       _assignedMemberIds.remove(member.key);
                     }
                   }),
+          ),
+        if (_assignedMemberIds.length >= maxExplicitEventAssignees)
+          const Padding(
+            padding: EdgeInsets.fromLTRB(16, 4, 16, 8),
+            child: Text(
+              'Du kannst höchstens 8 Personen einzeln auswählen. '
+              'Wähle „Alle“, wenn der Termin für die ganze Gruppe gilt.',
+            ),
           ),
         for (final id in unknownIds)
           CheckboxListTile(

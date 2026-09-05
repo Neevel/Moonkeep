@@ -168,7 +168,10 @@ service cloud.firestore {
           return m == 2 ? ((y % 400 == 0 || (y % 4 == 0 && y % 100 != 0)) ? 29 : 28)
             : (m in [4, 6, 9, 11] ? 30 : 31);
         }
-        function validEvent(d) {
+        function maxExplicitEventAssignees() {
+          return 8;
+        }
+        function validEvent(d, preserveExistingAssignments) {
           return d.keys().hasOnly(['title', 'notes', 'year', 'month', 'day',
             'endYear', 'endMonth', 'endDay', 'startMinute', 'endMinute',
             'importance', 'reminderMinutesBefore',
@@ -191,7 +194,7 @@ service cloud.firestore {
             && (!d.get('allDay', false)
               || d.get('reminderMinutesBefore', null) == null)
             && validRecurrence(d)
-            && validAssignments(d)
+            && validAssignments(d, preserveExistingAssignments)
             && d.revision is int && d.updatedBy == request.auth.uid
             && d.updatedAt == request.time;
         }
@@ -207,9 +210,31 @@ service cloud.firestore {
               && d.endYear * 10000 + d.endMonth * 100 + d.endDay
                 > d.year * 10000 + d.month * 100 + d.day);
         }
-        function validAssignments(d) {
-          let assignments = d.get('assignedMemberIds', []);
-          return assignments is list && assignments.size() <= 50;
+        function validCurrentAssignee(assignments, index) {
+          return assignments.size() <= index
+            || (assignments[index] is string
+              && assignments[index].matches('.*\\S.*')
+              && exists(memberPath(fid, assignments[index])));
+        }
+        function validNewAssignments(d) {
+          let assignments = d.assignedMemberIds;
+          return assignments is list
+            && assignments.size() >= 1
+            && assignments.size() <= maxExplicitEventAssignees()
+            && assignments.size() == assignments.toSet().size()
+            && validCurrentAssignee(assignments, 0)
+            && validCurrentAssignee(assignments, 1)
+            && validCurrentAssignee(assignments, 2)
+            && validCurrentAssignee(assignments, 3)
+            && validCurrentAssignee(assignments, 4)
+            && validCurrentAssignee(assignments, 5)
+            && validCurrentAssignee(assignments, 6)
+            && validCurrentAssignee(assignments, 7);
+        }
+        function validAssignments(d, preserveExistingAssignments) {
+          return preserveExistingAssignments
+            || !d.keys().hasAny(['assignedMemberIds'])
+            || validNewAssignments(d);
         }
         function validRecurrence(d) {
           let r = d.get('recurrence', null);
@@ -233,9 +258,13 @@ service cloud.firestore {
                     >= d.year * 10000 + d.month * 100 + d.day)));
         }
         allow read: if activeMember(fid);
-        allow create: if activeMember(fid) && validEvent(request.resource.data)
+        allow create: if activeMember(fid)
+          && validEvent(request.resource.data, false)
           && request.resource.data.revision == 1;
-        allow update: if activeMember(fid) && validEvent(request.resource.data)
+        allow update: if activeMember(fid)
+          && validEvent(request.resource.data,
+            !request.resource.data.diff(resource.data).affectedKeys()
+              .hasAny(['assignedMemberIds']))
           && request.resource.data.revision == resource.data.revision + 1;
         allow delete: if activeMember(fid);
       }

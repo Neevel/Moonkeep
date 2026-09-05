@@ -456,24 +456,150 @@ test('only supported reminder offsets are accepted while old events remain valid
   ));
 });
 
-test('event member assignments are optional and bounded', async () => {
+test('event member assignments accept all and up to eight current family members', async () => {
   const client = db('alice');
+  await invite();
+  await join('bob');
+  await env.withSecurityRulesDisabled(async context => {
+    const admin = context.firestore();
+    for (let index = 1; index <= 6; index += 1) {
+      await setDoc(
+        doc(admin, `families/alpha/members/member-${index}`),
+        memberProfile(`member-${index}`),
+      );
+    }
+  });
   await assertSucceeds(setDoc(
     doc(client, 'families/alpha/events/unassigned'),
     event(),
   ));
   await assertSucceeds(setDoc(
+    doc(client, 'families/alpha/events/owner'),
+    {...event(), assignedMemberIds: ['alice']},
+  ));
+  await assertSucceeds(setDoc(
     doc(client, 'families/alpha/events/assigned'),
     {...event(), assignedMemberIds: ['alice', 'bob']},
   ));
+  const maximum = ['alice', 'bob', ...Array.from(
+    {length: 6}, (_, index) => `member-${index + 1}`,
+  )];
+  await assertSucceeds(setDoc(
+    doc(client, 'families/alpha/events/maximum'),
+    {...event(), assignedMemberIds: maximum},
+  ));
+  const updateRef = doc(client, 'families/alpha/events/update');
+  await assertSucceeds(setDoc(updateRef, event()));
+  await assertSucceeds(updateDoc(updateRef, {
+    assignedMemberIds: ['alice', 'bob'], revision: 2,
+    updatedAt: serverTimestamp(),
+  }));
+  await assertSucceeds(updateDoc(updateRef, {
+    title: 'Zuordnung bleibt gleich', revision: 3,
+    updatedAt: serverTimestamp(),
+  }));
+});
+
+test('event member assignments reject invalid types, duplicates, and non-members', async () => {
+  const client = db('alice');
+  await invite();
+  await join('bob');
+  await create('eve', 'other');
+  await env.withSecurityRulesDisabled(async context => {
+    const admin = context.firestore();
+    for (let index = 1; index <= 7; index += 1) {
+      await setDoc(
+        doc(admin, `families/alpha/members/member-${index}`),
+        memberProfile(`member-${index}`),
+      );
+    }
+  });
+  const ref = suffix => doc(client, `families/alpha/events/${suffix}`);
   await assertFails(setDoc(
-    doc(client, 'families/alpha/events/bad-assignments'),
+    ref('bad-assignments'),
     {...event(), assignedMemberIds: 'alice'},
   ));
   await assertFails(setDoc(
-    doc(client, 'families/alpha/events/too-many-assignments'),
-    {...event(), assignedMemberIds: Array.from({length: 51}, (_, i) => `member-${i}`)},
+    ref('number-assignment'),
+    {...event(), assignedMemberIds: ['alice', 1]},
   ));
+  await assertFails(setDoc(
+    ref('bool-assignment'),
+    {...event(), assignedMemberIds: ['alice', true]},
+  ));
+  await assertFails(setDoc(
+    ref('null-assignment'),
+    {...event(), assignedMemberIds: ['alice', null]},
+  ));
+  await assertFails(setDoc(
+    ref('empty-assignment'),
+    {...event(), assignedMemberIds: ['']},
+  ));
+  await assertFails(setDoc(
+    ref('explicit-empty-list'),
+    {...event(), assignedMemberIds: []},
+  ));
+  await assertFails(setDoc(
+    ref('duplicate-assignment'),
+    {...event(), assignedMemberIds: ['alice', 'alice']},
+  ));
+  await assertFails(setDoc(
+    ref('unknown-assignment'),
+    {...event(), assignedMemberIds: ['missing']},
+  ));
+  await assertFails(setDoc(
+    ref('foreign-assignment'),
+    {...event(), assignedMemberIds: ['eve']},
+  ));
+  await assertFails(setDoc(
+    ref('too-many-assignments'),
+    {
+      ...event(),
+      assignedMemberIds: [
+        'alice', 'bob',
+        ...Array.from({length: 7}, (_, index) => `member-${index + 1}`),
+      ],
+    },
+  ));
+});
+
+test('unchanged historical assignments survive member removal and the new limit', async () => {
+  const client = db('alice');
+  await invite();
+  await join('bob');
+  const formerMemberRef = doc(client, 'families/alpha/events/former-member');
+  await assertSucceeds(setDoc(
+    formerMemberRef,
+    {...event(), assignedMemberIds: ['bob']},
+  ));
+  const bob = db('bob');
+  const leave = writeBatch(bob);
+  leave.delete(doc(bob, 'families/alpha/members/bob'));
+  leave.delete(doc(bob, 'memberships/bob'));
+  await assertSucceeds(leave.commit());
+  await assertSucceeds(updateDoc(formerMemberRef, {
+    title: 'Historisch bearbeitet', revision: 2,
+    updatedAt: serverTimestamp(),
+  }));
+  await assertFails(updateDoc(formerMemberRef, {
+    assignedMemberIds: ['bob', 'alice'], revision: 3,
+    updatedAt: serverTimestamp(),
+  }));
+
+  const legacyRef = doc(client, 'families/alpha/events/legacy-maximum');
+  await env.withSecurityRulesDisabled(async context => {
+    await setDoc(doc(
+      context.firestore(),
+      'families/alpha/events/legacy-maximum',
+    ), {
+      ...event(),
+      assignedMemberIds: Array.from({length: 9}, (_, index) => `former-${index}`),
+    });
+  });
+  await assertSucceeds(updateDoc(legacyRef, {
+    title: 'Große historische Zuordnung', revision: 2,
+    updatedAt: serverTimestamp(),
+  }));
 });
 
 test('multi-day event dates are valid, complete, and incompatible with recurrence', async () => {

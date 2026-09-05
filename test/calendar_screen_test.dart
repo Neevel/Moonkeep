@@ -977,6 +977,145 @@ void main() {
     expect(find.textContaining('Betrifft: Marcel, Sandra'), findsOneWidget);
   });
 
+  testWidgets(
+    'member assignment picker enforces the explicit limit and keeps All',
+    (tester) async {
+      tester.view.physicalSize = const Size(600, 1200);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final store = emptyStore();
+      final labels = {
+        for (var index = 1; index <= maxExplicitEventAssignees + 1; index += 1)
+          'member-$index': 'Mitglied $index',
+      };
+      await tester.pumpWidget(
+        MaterialApp(
+          home: CalendarScreen(store: store, memberLabels: labels),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip('Termin anlegen'));
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.text('Betrifft'));
+      await tester.tap(find.text('Betrifft'));
+      await tester.pumpAndSettle();
+
+      for (var index = 1; index <= maxExplicitEventAssignees; index += 1) {
+        await tester.tap(find.byKey(ValueKey('assignment-member-$index')));
+        await tester.pump();
+      }
+      expect(
+        tester
+            .widget<CheckboxListTile>(
+              find.byKey(const ValueKey('assignment-member-9')),
+            )
+            .onChanged,
+        isNull,
+      );
+      expect(
+        tester
+            .widget<CheckboxListTile>(
+              find.byKey(const ValueKey('assignment-member-1')),
+            )
+            .onChanged,
+        isNotNull,
+      );
+      expect(
+        find.text(
+          'Du kannst höchstens 8 Personen einzeln auswählen. '
+          'Wähle „Alle“, wenn der Termin für die ganze Gruppe gilt.',
+        ),
+        findsOneWidget,
+      );
+
+      await tester.tap(find.byKey(const ValueKey('assignment-all')));
+      await tester.pump();
+      expect(
+        tester
+            .widget<CheckboxListTile>(
+              find.byKey(const ValueKey('assignment-member-9')),
+            )
+            .onChanged,
+        isNotNull,
+      );
+      expect(
+        tester
+            .widget<CheckboxListTile>(
+              find.byKey(const ValueKey('assignment-all')),
+            )
+            .value,
+        isTrue,
+      );
+    },
+  );
+
+  testWidgets('editing preserves an oversized historical member assignment', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(600, 1200);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final day = DateUtils.dateOnly(DateTime.now());
+    final legacyIds = {
+      for (var index = 1; index <= maxExplicitEventAssignees + 1; index += 1)
+        'member-$index',
+    };
+    final store = storeWithEvents([
+      eventAt(
+        'legacy-assignment',
+        'Historischer Termin',
+        day,
+        9,
+        10,
+        assignedMemberIds: legacyIds,
+      ),
+    ]);
+    await store.load();
+    await tester.pumpWidget(
+      MaterialApp(
+        home: CalendarScreen(
+          store: store,
+          memberLabels: {
+            for (final id in legacyIds) id: id,
+            'member-10': 'member-10',
+          },
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(agendaTile('Historischer Termin'));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byType(TextFormField).first,
+      'Historisch bearbeitet',
+    );
+    await tester.ensureVisible(find.text('Betrifft'));
+    await tester.tap(find.text('Betrifft'));
+    await tester.pump();
+    expect(
+      tester
+          .widget<CheckboxListTile>(
+            find.byKey(const ValueKey('assignment-member-1')),
+          )
+          .onChanged,
+      isNotNull,
+    );
+    expect(
+      tester
+          .widget<CheckboxListTile>(
+            find.byKey(const ValueKey('assignment-member-10')),
+          )
+          .onChanged,
+      isNull,
+    );
+    await tester.ensureVisible(find.text('Speichern'));
+    await tester.tap(find.text('Speichern'));
+    await tester.pumpAndSettle();
+    expect(store.allEvents.single.assignedMemberIds, legacyIds);
+  });
+
   testWidgets('editor creates shortens and removes a multi-day range', (
     tester,
   ) async {
