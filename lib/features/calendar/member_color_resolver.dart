@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'calendar_event.dart';
+import '../../theme/moonkeep_theme.dart';
 
 enum CalendarAudienceKind { all, member, multiple, unknown }
 
@@ -81,29 +82,57 @@ final class MemberColorResolver {
     ),
   ];
 
-  static CalendarAudienceStyle forMemberId(String memberId) =>
-      _palette[_stableHash(memberId) % _palette.length];
+  static CalendarAudienceStyle allFor({MoonkeepThemeColors? theme}) =>
+      theme == null
+      ? all
+      : CalendarAudienceStyle(
+          kind: CalendarAudienceKind.all,
+          background: theme.allMembersBackground,
+          foreground: theme.allMembersForeground,
+        );
+
+  static CalendarAudienceStyle forMemberId(
+    String memberId, {
+    MoonkeepThemeColors? theme,
+  }) {
+    final index = _stableHash(memberId) % _palette.length;
+    if (theme == null) return _palette[index];
+    return CalendarAudienceStyle(
+      kind: CalendarAudienceKind.member,
+      background: theme.memberBackgrounds[index],
+      foreground: theme.memberForegrounds[index],
+    );
+  }
 
   static CalendarAudienceStyle forEvent(
     CalendarEvent event,
-    Map<String, String> memberLabels,
-  ) {
-    if (event.appliesToAllMembers) return all;
+    Map<String, String> memberLabels, {
+    MoonkeepThemeColors? theme,
+  }) {
+    if (event.appliesToAllMembers) {
+      return allFor(theme: theme);
+    }
     final ids = event.assignedMemberIds.toList()..sort();
     if (ids.length == 1) {
       return memberLabels.containsKey(ids.single)
-          ? forMemberId(ids.single)
-          : unknown;
+          ? forMemberId(ids.single, theme: theme)
+          : theme == null
+          ? unknown
+          : CalendarAudienceStyle(
+              kind: CalendarAudienceKind.unknown,
+              background: theme.unknownMemberBackground,
+              foreground: theme.unknownMemberForeground,
+            );
     }
     return CalendarAudienceStyle(
       kind: CalendarAudienceKind.multiple,
-      background: _multipleBackground,
-      foreground: _multipleForeground,
+      background: theme?.multipleMembersBackground ?? _multipleBackground,
+      foreground: theme?.multipleMembersForeground ?? _multipleForeground,
       indicatorColors: [
         for (final id in ids)
           memberLabels.containsKey(id)
-              ? forMemberId(id).background
-              : unknown.background,
+              ? forMemberId(id, theme: theme).background
+              : theme?.unknownMemberBackground ?? unknown.background,
       ],
     );
   }

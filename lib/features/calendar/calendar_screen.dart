@@ -10,6 +10,7 @@ import 'month_calendar_view.dart';
 import 'reminder_service.dart';
 import 'week_calendar_view.dart';
 import '../settings/settings_screen.dart';
+import '../../theme/moonkeep_theme.dart';
 
 enum _CalendarViewMode { month, week }
 
@@ -546,6 +547,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
                 audience: MemberColorResolver.forEvent(
                   event,
                   widget.memberLabels,
+                  theme: Theme.of(context).extension<MoonkeepThemeColors>(),
                 ),
                 importanceColor: _importanceColor(context, event.importance),
                 icon: event.importance == EventImportance.high
@@ -598,6 +600,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
   }
 
   Widget _memberLegend() {
+    final semantic = Theme.of(context).extension<MoonkeepThemeColors>();
     final entries = widget.memberLabels.entries.toList()
       ..sort(
         (a, b) =>
@@ -612,7 +615,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
           _LegendItem(
             key: const ValueKey('member-filter-all'),
             label: 'Alle',
-            audience: MemberColorResolver.all,
+            audience: MemberColorResolver.allFor(theme: semantic),
             selected: _selectedMemberId == null,
             onTap: () => setState(() => _selectedMemberId = null),
           ),
@@ -620,7 +623,10 @@ class _CalendarScreenState extends State<CalendarScreen> {
             _LegendItem(
               key: ValueKey('member-filter-${entry.key}'),
               label: _shortMemberLabel(entry.value),
-              audience: MemberColorResolver.forMemberId(entry.key),
+              audience: MemberColorResolver.forMemberId(
+                entry.key,
+                theme: semantic,
+              ),
               selected: _selectedMemberId == entry.key,
               onTap: () => setState(() => _selectedMemberId = entry.key),
             ),

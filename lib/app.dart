@@ -9,8 +9,10 @@ import 'features/account/account_screen.dart';
 import 'features/family/family_repository.dart';
 import 'features/family/family_screen.dart';
 import 'features/settings/settings_screen.dart';
+import 'theme/moonkeep_theme.dart';
+import 'theme/moonkeep_theme_controller.dart';
 
-class MoonkeepApp extends StatelessWidget {
+class MoonkeepApp extends StatefulWidget {
   const MoonkeepApp({
     super.key,
     this.store,
@@ -19,6 +21,7 @@ class MoonkeepApp extends StatelessWidget {
     this.accountSetupError,
     this.reminders,
     this.autoOpenCalendar = true,
+    this.themeController,
   });
 
   final CalendarStore? store;
@@ -27,6 +30,31 @@ class MoonkeepApp extends StatelessWidget {
   final String? accountSetupError;
   final ReminderService? reminders;
   final bool autoOpenCalendar;
+  final MoonkeepThemeController? themeController;
+
+  @override
+  State<MoonkeepApp> createState() => _MoonkeepAppState();
+}
+
+class _MoonkeepAppState extends State<MoonkeepApp> {
+  late final MoonkeepThemeController _themeController =
+      widget.themeController ?? MoonkeepThemeController();
+  late final bool _ownsThemeController = widget.themeController == null;
+
+  @override
+  void initState() {
+    super.initState();
+    _themeController.addListener(_themeChanged);
+  }
+
+  void _themeChanged() => setState(() {});
+
+  @override
+  void dispose() {
+    _themeController.removeListener(_themeChanged);
+    if (_ownsThemeController) _themeController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) => MaterialApp(
@@ -35,38 +63,34 @@ class MoonkeepApp extends StatelessWidget {
     locale: const Locale('de', 'DE'),
     supportedLocales: const [Locale('de', 'DE')],
     localizationsDelegates: GlobalMaterialLocalizations.delegates,
-    theme: ThemeData(
-      useMaterial3: true,
-      colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF65558F)),
-      scaffoldBackgroundColor: const Color(0xFFF9F7FC),
-      inputDecorationTheme: const InputDecorationTheme(
-        border: OutlineInputBorder(),
+    theme: MoonkeepThemes.themeFor(_themeController.themeId),
+    builder: (context, child) => MoonkeepThemeScope(
+      controller: _themeController,
+      child: MediaQuery(
+        data: MediaQuery.of(context).copyWith(alwaysUse24HourFormat: true),
+        child: child!,
       ),
     ),
-    builder: (context, child) => MediaQuery(
-      data: MediaQuery.of(context).copyWith(alwaysUse24HourFormat: true),
-      child: child!,
-    ),
-    home: store != null
-        ? CalendarScreen(store: store, reminders: reminders)
+    home: widget.store != null
+        ? CalendarScreen(store: widget.store, reminders: widget.reminders)
         : FamilyScreen(
-            auth: auth,
-            repository: family,
-            reminders: reminders,
-            autoOpenCalendar: autoOpenCalendar,
+            auth: widget.auth,
+            repository: widget.family,
+            reminders: widget.reminders,
+            autoOpenCalendar: widget.autoOpenCalendar,
           ),
     routes: {
       '/account': (context) => AccountScreen(
-        auth: auth,
-        syncDisplayName: family?.updateOwnDisplayName,
-        accountDeletionPlan: family?.accountDeletionPlan,
-        cleanupForAccountDeletion: family?.cleanupForAccountDeletion,
-        setupError: accountSetupError,
+        auth: widget.auth,
+        syncDisplayName: widget.family?.updateOwnDisplayName,
+        accountDeletionPlan: widget.family?.accountDeletionPlan,
+        cleanupForAccountDeletion: widget.family?.cleanupForAccountDeletion,
+        setupError: widget.accountSetupError,
       ),
       '/family': (context) => FamilyScreen(
-        auth: auth,
-        repository: family,
-        reminders: reminders,
+        auth: widget.auth,
+        repository: widget.family,
+        reminders: widget.reminders,
         initialSection:
             ModalRoute.of(context)?.settings.arguments as FamilySection?,
       ),

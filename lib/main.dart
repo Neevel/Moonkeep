@@ -10,9 +10,11 @@ import 'firebase_configuration.dart';
 import 'features/family/family_repository.dart';
 import 'features/family/firestore_family_repository.dart';
 import 'features/calendar/reminder_service.dart';
+import 'theme/moonkeep_theme_controller.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  final themeController = await MoonkeepThemeController.load();
   AuthRepository? auth;
   FamilyRepository? family;
   String? accountSetupError;
@@ -46,6 +48,7 @@ Future<void> main() async {
       family: family,
       accountSetupError: accountSetupError,
       reminders: reminders,
+      themeController: themeController,
     ),
   );
 }

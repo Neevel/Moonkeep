@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'calendar_event.dart';
 import 'member_color_resolver.dart';
+import '../../theme/moonkeep_theme.dart';
 
 class MonthCalendarView extends StatelessWidget {
   const MonthCalendarView({
@@ -127,6 +128,7 @@ class _MonthDayCell extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
+    final semantic = Theme.of(context).extension<MoonkeepThemeColors>();
     final selected = DateUtils.isSameDay(day, selectedDay);
     final today = DateUtils.isSameDay(day, DateTime.now());
     final inMonth =
@@ -147,10 +149,18 @@ class _MonthDayCell extends StatelessWidget {
           margin: const EdgeInsets.all(1),
           padding: const EdgeInsets.fromLTRB(2, 3, 2, 1),
           decoration: BoxDecoration(
-            color: selected ? colors.primaryContainer : null,
+            color: selected
+                ? semantic?.calendarSelected ?? colors.primaryContainer
+                : inMonth
+                ? semantic?.calendarCell
+                : semantic?.calendarCellOutsideMonth,
             borderRadius: BorderRadius.circular(10),
             border: today
-                ? Border.all(color: colors.primary.withValues(alpha: 0.65))
+                ? Border.all(
+                    color:
+                        semantic?.calendarToday ??
+                        colors.primary.withValues(alpha: 0.65),
+                  )
                 : Border.all(
                     color: colors.outlineVariant.withValues(alpha: 0.45),
                   ),
@@ -211,7 +221,12 @@ class _MonthEventChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
-    final audience = MemberColorResolver.forEvent(event, memberLabels);
+    final semantic = Theme.of(context).extension<MoonkeepThemeColors>();
+    final audience = MemberColorResolver.forEvent(
+      event,
+      memberLabels,
+      theme: semantic,
+    );
     return Padding(
       padding: const EdgeInsets.only(bottom: 2),
       child: Container(

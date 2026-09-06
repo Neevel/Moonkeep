@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'calendar_event.dart';
 import 'member_color_resolver.dart';
+import '../../theme/moonkeep_theme.dart';
 
 class WeekCalendarView extends StatelessWidget {
   const WeekCalendarView({
@@ -112,6 +113,7 @@ class _WeekDaySection extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
+    final semantic = Theme.of(context).extension<MoonkeepThemeColors>();
     final allDay = events.where((event) => event.isAllDay).toList()
       ..sort((a, b) => a.title.compareTo(b.title));
     final timed = events.where((event) => !event.isAllDay).toList()
@@ -125,11 +127,14 @@ class _WeekDaySection extends StatelessWidget {
       duration: const Duration(milliseconds: 140),
       decoration: BoxDecoration(
         color: selected
-            ? colors.primaryContainer.withValues(alpha: 0.34)
-            : colors.surface,
+            ? semantic?.calendarSelected ??
+                  colors.primaryContainer.withValues(alpha: 0.34)
+            : semantic?.calendarCell ?? colors.surface,
         border: Border(
           left: BorderSide(
-            color: today ? colors.primary : Colors.transparent,
+            color: today
+                ? semantic?.calendarToday ?? colors.primary
+                : Colors.transparent,
             width: 3,
           ),
           bottom: BorderSide(color: colors.outlineVariant),
@@ -239,12 +244,17 @@ class _CompactEvent extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
+    final semantic = Theme.of(context).extension<MoonkeepThemeColors>();
     final color = switch (event.importance) {
       EventImportance.high => colors.error,
       EventImportance.normal => colors.primary,
       EventImportance.low => colors.outline,
     };
-    final audience = MemberColorResolver.forEvent(event, memberLabels);
+    final audience = MemberColorResolver.forEvent(
+      event,
+      memberLabels,
+      theme: semantic,
+    );
     return Material(
       color: audience.background,
       borderRadius: BorderRadius.circular(6),

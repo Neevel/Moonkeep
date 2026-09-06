@@ -1221,7 +1221,9 @@ void main() {
       addTearDown(tester.view.resetDevicePixelRatio);
       final now = DateTime.now();
       final today = DateTime(now.year, now.month, now.day);
-      final tomorrow = today.add(const Duration(days: 1));
+      final otherWeekDay = today.add(
+        Duration(days: today.weekday == DateTime.sunday ? -1 : 1),
+      );
       final store = storeWithEvents([
         eventAt('all', 'Für alle', today, 8, 9),
         eventAt(
@@ -1252,11 +1254,10 @@ void main() {
         ),
         eventAt(
           'tomorrow-b',
-          'Morgen nur Sandra',
-          tomorrow,
+          'Anderer Tag nur Sandra',
+          otherWeekDay,
           9,
           10,
-          recurrence: EventRecurrence.daily,
           assignedMemberIds: const ['member-b'],
         ),
       ]);
@@ -1338,7 +1339,7 @@ void main() {
       );
       expect(
         find.descendant(
-          of: find.byKey(ValueKey('week-day-card-${dayId(tomorrow)}')),
+          of: find.byKey(ValueKey('week-day-card-${dayId(otherWeekDay)}')),
           matching: find.text('Keine Termine'),
         ),
         findsOneWidget,

@@ -9,6 +9,7 @@ import 'package:moonkeep/features/calendar/calendar_repository.dart';
 import 'package:moonkeep/features/calendar/calendar_store.dart';
 import 'package:moonkeep/features/family/family_repository.dart';
 import 'package:moonkeep/features/family/firestore_family_repository.dart';
+import 'package:moonkeep/features/settings/settings_screen.dart';
 
 class FakeAuth implements AuthRepository {
   FakeAuth(this.user);
@@ -356,11 +357,46 @@ void main() {
     expect(find.text('Aktueller Kalender'), findsOneWidget);
     expect(find.text('Jeske'), findsOneWidget);
     expect(find.text('Design'), findsOneWidget);
-    expect(find.text('Demnächst'), findsOneWidget);
+    expect(find.text('Moonkeep'), findsOneWidget);
     expect(
       find.text('Erinnerungen werden direkt beim Termin eingestellt.'),
       findsOneWidget,
     );
+
+    await tester.tap(find.text('Design'));
+    await tester.pumpAndSettle();
+    for (final name in [
+      'Moonkeep',
+      'Obsidian',
+      'Ancient Grimoire',
+      'Dungeon Keep',
+      'Enchanted Forest',
+    ]) {
+      expect(find.text(name), findsOneWidget);
+    }
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('theme-moonkeep')),
+        matching: find.byIcon(Icons.check_circle),
+      ),
+      findsOneWidget,
+    );
+    await tester.tap(find.text('Obsidian'));
+    await tester.pumpAndSettle();
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('theme-obsidian')),
+        matching: find.byIcon(Icons.check_circle),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      Theme.of(tester.element(find.byType(DesignScreen))).brightness,
+      Brightness.dark,
+    );
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
+    expect(find.text('Obsidian'), findsOneWidget);
 
     await tester.tap(find.text('Mitglieder'));
     await tester.pumpAndSettle();
