@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
@@ -26,7 +27,13 @@ Future<void> main() async {
     // is unavailable on this platform.
   }
   try {
-    final options = const FirebaseConfiguration.fromEnvironment().options;
+    final options = switch (defaultTargetPlatform) {
+      TargetPlatform.android || TargetPlatform.iOS =>
+        const FirebaseConfiguration.fromEnvironment().optionsFor(
+          defaultTargetPlatform,
+        ),
+      _ => null,
+    };
     if (options != null) {
       final app = await Firebase.initializeApp(options: options)
           .timeout(const Duration(seconds: 15));

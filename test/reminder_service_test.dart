@@ -270,12 +270,15 @@ void main() {
                 'title': arguments['title'] as String?,
                 'body': arguments['body'] as String?,
                 'payload': arguments['payload'] as String?,
+                'scheduledDateTimeISO8601':
+                    arguments['scheduledDateTimeISO8601'] as String,
               });
             }
             return true;
           });
       service = await LocalReminderService.initialize(
         now: (_) => tz.TZDateTime(berlin, 2026, 9, 7),
+        platform: TargetPlatform.android,
       );
       calls.clear();
     });
@@ -287,14 +290,13 @@ void main() {
 
     test('create schedules one notification per recurring occurrence', () async {
       await service
-          .schedule(
+          .reconcile([
             event(
               ReminderOffset.atStart,
               recurrence: EventRecurrence.weekly,
               start: DateTime.utc(2026, 9, 8, 18),
             ),
-            shared: true,
-          )
+          ], shared: true)
           .timeout(
             const Duration(seconds: 2),
             onTimeout: () => fail(
@@ -312,70 +314,147 @@ void main() {
     test(
       'edit removes old occurrences and reminder removal clears all',
       () async {
-        await service.schedule(
+        await service.reconcile([
           event(
             ReminderOffset.atStart,
             recurrence: EventRecurrence.daily,
             start: DateTime.utc(2026, 9, 8, 18),
           ),
-          shared: true,
-        );
+        ], shared: true);
         expect(pending, hasLength(29));
 
-        await service.schedule(
+        await service.reconcile([
           event(
             ReminderOffset.hours1,
             recurrence: EventRecurrence.weekly,
             recurrenceEnd: DateTime.utc(2026, 9, 15),
             start: DateTime.utc(2026, 9, 8, 20),
           ),
-          shared: true,
-        );
+        ], shared: true);
         expect(pending, hasLength(2));
 
-        await service.schedule(
+        await service.reconcile([
           event(
             ReminderOffset.none,
             recurrence: EventRecurrence.weekly,
             start: DateTime.utc(2026, 9, 8, 20),
           ),
-          shared: true,
-        );
+        ], shared: true);
         expect(pending, isEmpty);
       },
     );
 
     test('timed to all-day and delete remove every series reminder', () async {
-      await service.schedule(
+      await service.reconcile([
         event(
           ReminderOffset.minutes15,
           recurrence: EventRecurrence.daily,
           start: DateTime.utc(2026, 9, 8, 18),
         ),
-        shared: true,
-      );
+      ], shared: true);
       expect(pending, isNotEmpty);
-      await service.schedule(
+      await service.reconcile([
         event(
           ReminderOffset.none,
           allDay: true,
           recurrence: EventRecurrence.daily,
           start: DateTime.utc(2026, 9, 8),
         ),
-        shared: true,
-      );
+      ], shared: true);
       expect(pending, isEmpty);
 
-      await service.schedule(
+      await service.reconcile([
         event(
           ReminderOffset.minutes15,
           recurrence: EventRecurrence.weekly,
           start: DateTime.utc(2026, 9, 8, 18),
         ),
-        shared: true,
-      );
+      ], shared: true);
       await service.cancel('event-1');
       expect(pending, isEmpty);
+    });
+
+    test(
+      'iOS keeps the globally earliest 64 reminders across series',
+      () async {
+        service = await LocalReminderService.initialize(
+          now: (_) => tz.TZDateTime(berlin, 2026, 9, 7),
+          platform: TargetPlatform.iOS,
+        );
+        pending.add({
+          'id': 987654,
+          'title': 'Alt',
+          'body': 'Alt',
+          'payload': 'moonkeep:event:deleted',
+          'scheduledDateTimeISO8601': '2026-09-08T00:00:00.000+0200',
+        });
+        final events = [
+          event(
+            ReminderOffset.atStart,
+            id: 'morning',
+            recurrence: EventRecurrence.daily,
+            start: DateTime.utc(2026, 9, 8, 8),
+          ),
+          event(
+            ReminderOffset.atStart,
+            id: 'noon',
+            recurrence: EventRecurrence.daily,
+            start: DateTime.utc(2026, 9, 8, 12),
+          ),
+          event(
+            ReminderOffset.atStart,
+            id: 'evening',
+            recurrence: EventRecurrence.daily,
+            start: DateTime.utc(2026, 9, 8, 18),
+          ),
+        ];
+        final allCandidates = [
+          for (final value in events)
+            ...plannedReminders(
+              value,
+              shared: true,
+              now: tz.TZDateTime(berlin, 2026, 9, 7),
+            ).map((planned) => planned.scheduledDate.toIso8601String()),
+        ]..sort();
+
+        await service.reconcile(events, shared: true);
+
+        final scheduled =
+            pending
+                .map((item) => item['scheduledDateTimeISO8601']! as String)
+                .toList()
+              ..sort();
+        expect(pending, hasLength(iosPendingNotificationLimit));
+        expect(scheduled, allCandidates.take(iosPendingNotificationLimit));
+        expect(
+          pending.any((item) => item['payload'] == 'moonkeep:event:deleted'),
+          isFalse,
+        );
+        expect(
+          pending.map((item) => item['payload']).toSet(),
+          containsAll([
+            'moonkeep:event:morning',
+            'moonkeep:event:noon',
+            'moonkeep:event:evening',
+          ]),
+        );
+      },
+    );
+
+    test('Android keeps more than 64 reminders in the horizon', () async {
+      final events = [
+        for (var index = 0; index < 3; index++)
+          event(
+            ReminderOffset.atStart,
+            id: 'daily-$index',
+            recurrence: EventRecurrence.daily,
+            start: DateTime.utc(2026, 9, 8, 8 + index),
+          ),
+      ];
+
+      await service.reconcile(events, shared: true);
+
+      expect(pending.length, greaterThan(iosPendingNotificationLimit));
     });
 
     test('reconcile removes deleted events and stays idempotent', () async {

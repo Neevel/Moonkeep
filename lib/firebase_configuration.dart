@@ -1,8 +1,11 @@
 import 'package:firebase_core/firebase_core.dart';
+import 'package:flutter/foundation.dart';
 
 /// Client configuration is supplied per platform at build time. No fallback
 /// project is chosen, so an unconfigured build never sends account data.
 class FirebaseConfiguration {
+  static const iosBundleIdentifier = 'dev.moonkeep.moonkeep';
+
   const FirebaseConfiguration({
     this.apiKey = '',
     this.appId = '',
@@ -29,7 +32,7 @@ class FirebaseConfiguration {
   final String authDomain;
   final String iosBundleId;
 
-  FirebaseOptions? get options {
+  FirebaseOptions? optionsFor(TargetPlatform platform) {
     final requiredValues = [apiKey, appId, messagingSenderId, projectId];
     if ([
       ...requiredValues,
@@ -41,13 +44,21 @@ class FirebaseConfiguration {
     if (requiredValues.any((value) => value.trim().isEmpty)) {
       throw const FormatException('Unvollständige Firebase-Konfiguration.');
     }
+    if (platform == TargetPlatform.iOS) {
+      if (authDomain.trim().isEmpty || iosBundleId.trim().isEmpty) {
+        throw const FormatException('Unvollständige iOS-Konfiguration.');
+      }
+      if (iosBundleId != iosBundleIdentifier) {
+        throw const FormatException('Unerwartete iOS-Bundle-ID.');
+      }
+    }
     return FirebaseOptions(
       apiKey: apiKey,
       appId: appId,
       messagingSenderId: messagingSenderId,
       projectId: projectId,
       authDomain: authDomain.isEmpty ? null : authDomain,
-      iosBundleId: iosBundleId.isEmpty ? null : iosBundleId,
+      iosBundleId: platform == TargetPlatform.iOS ? iosBundleId : null,
     );
   }
 }

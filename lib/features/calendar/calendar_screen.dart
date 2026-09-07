@@ -216,7 +216,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
                 '$success Erinnerungen sind auf diesem Gerät nicht erlaubt.';
           }
         }
-        await reminders.schedule(saved, shared: _store!.isShared);
+        await reminders.reconcile(_store!.allEvents, shared: _store!.isShared);
       }
       if (mounted) _showMessage(feedback);
     }

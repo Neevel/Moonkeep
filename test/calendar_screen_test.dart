@@ -21,9 +21,6 @@ class _RecordingReminderService implements ReminderService {
   Future<bool> requestPermission() async => true;
 
   @override
-  Future<void> schedule(CalendarEvent event, {required bool shared}) async {}
-
-  @override
   Future<void> reconcile(
     Iterable<CalendarEvent> events, {
     required bool shared,

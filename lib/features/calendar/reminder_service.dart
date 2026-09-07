@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:timezone/data/latest.dart' as tz_data;
 import 'package:timezone/timezone.dart' as tz;
@@ -5,6 +6,7 @@ import 'package:timezone/timezone.dart' as tz;
 import 'calendar_event.dart';
 
 const recurringReminderPlanningDays = 30;
+const iosPendingNotificationLimit = 64;
 const _payloadPrefix = 'moonkeep:event:';
 
 class PlannedReminder {
@@ -164,7 +166,6 @@ int _stableNotificationId(String value) {
 
 abstract interface class ReminderService {
   Future<bool> requestPermission();
-  Future<void> schedule(CalendarEvent event, {required bool shared});
   Future<void> cancel(String eventId);
   Future<void> reconcile(
     Iterable<CalendarEvent> events, {
@@ -173,10 +174,11 @@ abstract interface class ReminderService {
 }
 
 class LocalReminderService implements ReminderService {
-  LocalReminderService._(this._plugin, this._now);
+  LocalReminderService._(this._plugin, this._now, this._platform);
 
   final FlutterLocalNotificationsPlugin _plugin;
   final tz.TZDateTime Function(tz.Location location) _now;
+  final TargetPlatform _platform;
   Future<void> _pendingOperation = Future.value();
   static const _details = NotificationDetails(
     android: AndroidNotificationDetails(
@@ -186,10 +188,16 @@ class LocalReminderService implements ReminderService {
       importance: Importance.high,
       priority: Priority.high,
     ),
+    iOS: DarwinNotificationDetails(
+      presentAlert: true,
+      presentBadge: true,
+      presentSound: true,
+    ),
   );
 
   static Future<LocalReminderService> initialize({
     tz.TZDateTime Function(tz.Location location)? now,
+    TargetPlatform? platform,
   }) async {
     tz_data.initializeTimeZones();
     final plugin = FlutterLocalNotificationsPlugin();
@@ -206,6 +214,7 @@ class LocalReminderService implements ReminderService {
     return LocalReminderService._(
       plugin,
       now ?? (location) => tz.TZDateTime.now(location),
+      platform ?? defaultTargetPlatform,
     );
   }
 
@@ -235,13 +244,6 @@ class LocalReminderService implements ReminderService {
   }
 
   @override
-  Future<void> schedule(CalendarEvent event, {required bool shared}) =>
-      _serialized(() async {
-        await _cancelEvent(event.id);
-        await _scheduleEvent(event, shared: shared);
-      });
-
-  @override
   Future<void> cancel(String eventId) =>
       _serialized(() => _cancelEvent(eventId));
 
@@ -261,6 +263,17 @@ class LocalReminderService implements ReminderService {
       )) {
         desired.add((event, planned));
       }
+    }
+    desired.sort((left, right) {
+      final byDate = left.$2.scheduledDate.compareTo(right.$2.scheduledDate);
+      if (byDate != 0) return byDate;
+      final byEvent = left.$1.id.compareTo(right.$1.id);
+      if (byEvent != 0) return byEvent;
+      return left.$2.occurrenceStart.compareTo(right.$2.occurrenceStart);
+    });
+    if (_platform == TargetPlatform.iOS &&
+        desired.length > iosPendingNotificationLimit) {
+      desired.removeRange(iosPendingNotificationLimit, desired.length);
     }
     final desiredIds = desired
         .map(
@@ -295,19 +308,6 @@ class LocalReminderService implements ReminderService {
     ids.add(_stableNotificationId(eventId));
     for (final id in ids) {
       await _plugin.cancel(id: id);
-    }
-  }
-
-  Future<void> _scheduleEvent(
-    CalendarEvent event, {
-    required bool shared,
-  }) async {
-    for (final planned in plannedReminders(
-      event,
-      shared: shared,
-      now: _now(_eventLocation(shared)),
-    )) {
-      await _schedulePlanned(event, planned);
     }
   }
 
