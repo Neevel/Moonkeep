@@ -43,7 +43,6 @@ class _CalendarScreenState extends State<CalendarScreen> {
   String? _error;
   bool _busy = false;
   StreamSubscription<CalendarNotice>? _noticeSubscription;
-  final Map<String, int> _scheduledRevisions = {};
 
   @override
   void initState() {
@@ -157,18 +156,13 @@ class _CalendarScreenState extends State<CalendarScreen> {
   void _syncReminders() {
     final store = _store;
     final reminders = widget.reminders;
-    if (store == null || reminders == null) return;
-    final ids = store.allEvents.map((event) => event.id).toSet();
-    for (final removed
-        in _scheduledRevisions.keys.where((id) => !ids.contains(id)).toList()) {
-      _scheduledRevisions.remove(removed);
-      unawaited(reminders.cancel(removed));
+    if (store == null ||
+        reminders == null ||
+        store.isLoading ||
+        store.syncError != null) {
+      return;
     }
-    for (final event in store.allEvents) {
-      if (_scheduledRevisions[event.id] == event.revision) continue;
-      _scheduledRevisions[event.id] = event.revision;
-      unawaited(reminders.schedule(event, shared: store.isShared));
-    }
+    unawaited(reminders.reconcile(store.allEvents, shared: store.isShared));
   }
 
   @override

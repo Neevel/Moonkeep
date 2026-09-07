@@ -9,6 +9,28 @@ import 'package:moonkeep/features/calendar/calendar_screen.dart';
 import 'package:moonkeep/features/calendar/calendar_store.dart';
 import 'package:moonkeep/features/calendar/event_editor.dart';
 import 'package:moonkeep/features/calendar/member_color_resolver.dart';
+import 'package:moonkeep/features/calendar/reminder_service.dart';
+
+class _RecordingReminderService implements ReminderService {
+  final reconciledEventIds = <Set<String>>[];
+
+  @override
+  Future<void> cancel(String eventId) async {}
+
+  @override
+  Future<bool> requestPermission() async => true;
+
+  @override
+  Future<void> schedule(CalendarEvent event, {required bool shared}) async {}
+
+  @override
+  Future<void> reconcile(
+    Iterable<CalendarEvent> events, {
+    required bool shared,
+  }) async {
+    reconciledEventIds.add(events.map((event) => event.id).toSet());
+  }
+}
 
 void main() {
   CalendarStore emptyStore() =>
@@ -120,6 +142,25 @@ void main() {
       expect(renamed.background, single.background);
     },
   );
+
+  testWidgets('calendar load and later store sync reconcile reminders', (
+    tester,
+  ) async {
+    final day = DateUtils.dateOnly(DateTime.now());
+    final store = storeWithEvents([eventAt('first', 'Erster', day, 9, 10)]);
+    final reminders = _RecordingReminderService();
+    await tester.pumpWidget(
+      MaterialApp(
+        home: CalendarScreen(store: store, reminders: reminders),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(reminders.reconciledEventIds.last, {'first'});
+
+    await store.save(eventAt('second', 'Zweiter', day, 11, 12));
+    await tester.pump();
+    expect(reminders.reconciledEventIds.last, {'first', 'second'});
+  });
 
   testWidgets('creates, edits, cancels deletion and deletes an event', (
     tester,
